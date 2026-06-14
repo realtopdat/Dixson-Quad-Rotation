@@ -1,0 +1,832 @@
+//@version=6
+indicator("Dix$on Quad Rotation", overlay=true, max_bars_back=1200, max_labels_count=500, max_lines_count=500)
+
+// Dix$on Quad Rotation
+// Standalone quad-stochastic scalping indicator with an Adaptive Trend Channel
+// adapted from the repository's Dix$ons Tackle Box ATC calcDev(), Pearson-R
+// period selection, and line.new/line.set channel plotting structure.
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inputs
+// ─────────────────────────────────────────────────────────────────────────────
+groupTB = "Tackle Box"
+enableQuadRotation = input.bool(true, "Enable Quad Rotation Signals", group=groupTB, display=display.none, tooltip="Master toggle for all Quad Rotation reversal signals.")
+enableFlagSignals = input.bool(true, "Enable Embedded Flag Signals", group=groupTB, display=display.none, tooltip="Master toggle for embedded stochastic continuation flag signals.")
+enableATCFilter = input.bool(true, "Enable Adaptive Trend Channel Filter", group=groupTB, display=display.none, tooltip="Master toggle for Adaptive Trend Channel signal filtering and grading.")
+enableDashboard = input.bool(true, "Enable Dashboard", group=groupTB, display=display.none, tooltip="Show or hide the signal/status dashboard.")
+
+groupStoch = "------ Quad Stochastic Settings ------"
+kFast = input.int(9, "Fast Stoch K Length", minval=1, group=groupStoch, display=display.none, tooltip="K length for the fast 9,3 stochastic used for entry and exit timing.")
+dFast = input.int(3, "Fast Stoch D Smoothing", minval=1, group=groupStoch, display=display.none, tooltip="D smoothing for the fast stochastic.")
+kStoch2 = input.int(14, "Second Stoch K Length", minval=1, group=groupStoch, display=display.none, tooltip="K length for the second confirmation stochastic.")
+dStoch2 = input.int(3, "Second Stoch D Smoothing", minval=1, group=groupStoch, display=display.none, tooltip="D smoothing for the second stochastic.")
+kStoch3 = input.int(44, "Third Stoch K Length", minval=1, group=groupStoch, display=display.none, tooltip="K length for the third confirmation stochastic.")
+dStoch3 = input.int(3, "Third Stoch D Smoothing", minval=1, group=groupStoch, display=display.none, tooltip="D smoothing for the third stochastic.")
+kSlow = input.int(60, "Slow Stoch K Length", minval=1, group=groupStoch, display=display.none, tooltip="K length for the slow 60,10 stochastic used to approximate higher-timeframe pressure.")
+dSlow = input.int(10, "Slow Stoch D Smoothing", minval=1, group=groupStoch, display=display.none, tooltip="D smoothing for the slow stochastic.")
+oversoldLevel = input.float(20.0, "Oversold Level", minval=0, maxval=50, group=groupStoch, display=display.none, tooltip="Level below which stochastic values are considered oversold.")
+overboughtLevel = input.float(80.0, "Overbought Level", minval=50, maxval=100, group=groupStoch, display=display.none, tooltip="Level above which stochastic values are considered overbought.")
+embeddedBullLevel = input.float(85.0, "Embedded Bull Level", minval=50, maxval=100, group=groupStoch, display=display.none, tooltip="Slow stochastic level above which bullish embedded trend pressure is detected.")
+embeddedBearLevel = input.float(15.0, "Embedded Bear Level", minval=0, maxval=50, group=groupStoch, display=display.none, tooltip="Slow stochastic level below which bearish embedded trend pressure is detected.")
+embeddedBars = input.int(3, "Embedded Confirmation Bars", minval=1, maxval=20, group=groupStoch, display=display.none, tooltip="Number of bars the slow stochastic must remain embedded to confirm strong trend pressure.")
+showStochDebugPlots = input.bool(false, "Show Stochastic Debug Plots", group=groupStoch, display=display.none, tooltip="Shows the four stochastic values in the Data Window for debugging.")
+
+groupDiv = "------ Divergence Settings ------"
+divPivotLeft = input.int(3, "Divergence Pivot Left Bars", minval=1, maxval=20, group=groupDiv, display=display.none, tooltip="Number of left bars used to confirm divergence pivots.")
+divPivotRight = input.int(3, "Divergence Pivot Right Bars", minval=1, maxval=20, group=groupDiv, display=display.none, tooltip="Number of right bars used to confirm divergence pivots. Higher values reduce noise but confirm later.")
+divPriceSource = input.string("Body", "Divergence Price Source", options=["Body", "Wick"], group=groupDiv, display=display.none, tooltip="Use candle bodies or wicks when comparing price pivots for divergence.")
+allowEqualPriceDiv = input.bool(true, "Allow Equal High/Low Divergence", group=groupDiv, display=display.none, tooltip="Allow double-top or double-bottom style divergence when price is nearly equal.")
+equalToleranceTicks = input.int(2, "Equal Price Tolerance Ticks", minval=0, maxval=100, group=groupDiv, display=display.none, tooltip="Tolerance in ticks for equal high/low divergence.")
+requireQuadForDiv = input.bool(true, "Require Quad Rotation for Divergence Signal", group=groupDiv, display=display.none, tooltip="Require all four stochastics to be overbought or oversold before plotting divergence reversal signals.")
+quadLookbackBars = input.int(10, "Quad Rotation Lookback Bars", minval=1, maxval=100, group=groupDiv, display=display.none, tooltip="Number of bars after a quad rotation where divergence can still qualify as a quad divergence.")
+
+groupSig = "------ Signal Settings ------"
+enableBullFlags = input.bool(true, "Enable Bull Flag Signals", group=groupSig, display=display.none, tooltip="Enable bullish embedded continuation signals.")
+enableBearFlags = input.bool(true, "Enable Bear Flag Signals", group=groupSig, display=display.none, tooltip="Enable bearish embedded continuation signals.")
+flagFastPullbackBull = input.float(25.0, "Bull Flag Fast Stoch Pullback Level", minval=0, maxval=50, group=groupSig, display=display.none, tooltip="Bull flag triggers when fast stochastic pulls back near or below this level while slow stochastic remains embedded bullish.")
+flagFastPullbackBear = input.float(75.0, "Bear Flag Fast Stoch Pullback Level", minval=50, maxval=100, group=groupSig, display=display.none, tooltip="Bear flag triggers when fast stochastic rotates near or above this level while slow stochastic remains embedded bearish.")
+useFastTurnConfirmation = input.bool(true, "Require Fast Stoch Turn Confirmation", group=groupSig, display=display.none, tooltip="Require the fast stochastic to turn back in the trade direction before confirming a flag signal.")
+minBarsBetweenSignals = input.int(5, "Minimum Bars Between Same Direction Signals", minval=0, maxval=100, group=groupSig, display=display.none, tooltip="Prevents repeated labels from printing too close together.")
+
+groupATC = "------ Adaptive Trend Channel Filter ------"
+atcMode = input.string("Short-Term", "ATC Mode", options=["Short-Term", "Long-Term", "Both"], group=groupATC, display=display.none, tooltip="Select which adaptive channel to use for signal filtering.")
+atcSource = input.source(close, "ATC Source", group=groupATC, display=display.none, tooltip="Source used for Adaptive Trend Channel regression calculations.")
+showATC = input.bool(true, "Show Adaptive Trend Channel", group=groupATC, display=display.none, tooltip="Show or hide the Adaptive Trend Channel lines.")
+showATCMidline = input.bool(false, "Show ATC Midline", group=groupATC, display=display.none, tooltip="Show or hide the Adaptive Trend Channel midline.")
+showATCFill = input.bool(false, "Show ATC Background Fill", group=groupATC, display=display.none, tooltip="Show or hide background fill between ATC upper and lower boundaries.")
+atcHistoryDisplayCap = input.int(1, "ATC History Display Cap", minval=0, maxval=150, group=groupATC, display=display.none, tooltip="Number of historical ATC channel snapshots to retain. 1 shows only the current live channel. 0 applies no user cap, though TradingView object limits still apply.")
+atcDevMultST = input.float(2.0, "Short-Term Deviation Multiplier", step=0.1, group=groupATC, display=display.none, tooltip="Deviation multiplier for the short-term adaptive channel.")
+atcDevMultLT = input.float(2.0, "Long-Term Deviation Multiplier", step=0.1, group=groupATC, display=display.none, tooltip="Deviation multiplier for the long-term adaptive channel.")
+atcProximityPct = input.float(12.5, "ATC Boundary Proximity %", minval=0.0, maxval=50.0, step=0.25, group=groupATC, display=display.none, tooltip="Percent of channel width used to define whether price is near the upper or lower ATC boundary.")
+requireATCForSignals = input.bool(false, "Require ATC Confirmation", group=groupATC, display=display.none, tooltip="If enabled, reversal signals must occur near the correct ATC boundary.")
+gradeSignalsWithATC = input.bool(true, "Grade Signals With ATC", group=groupATC, display=display.none, tooltip="If enabled, labels distinguish between regular signals and ATC-confirmed signals.")
+minPearsonForATC = input.float(0.60, "Minimum Pearson R for ATC Confirmation", minval=0.0, maxval=1.0, step=0.01, group=groupATC, display=display.none, tooltip="Minimum Pearson R required for ATC confirmation to qualify.")
+atcUpperColorST = input.color(color.rgb(97, 97, 97), "ST Upper Channel Color", group=groupATC, display=display.none, tooltip="Short-term upper channel color.")
+atcLowerColorST = input.color(color.rgb(97, 97, 97), "ST Lower Channel Color", group=groupATC, display=display.none, tooltip="Short-term lower channel color.")
+atcUpperColorLT = input.color(color.red, "LT Upper Channel Color", group=groupATC, display=display.none, tooltip="Long-term upper channel color.")
+atcLowerColorLT = input.color(color.lime, "LT Lower Channel Color", group=groupATC, display=display.none, tooltip="Long-term lower channel color.")
+atcMidColor = input.color(color.blue, "ATC Midline Color", group=groupATC, display=display.none, tooltip="Adaptive channel midline color.")
+atcLineWidth = input.int(1, "ATC Line Width", minval=1, maxval=5, group=groupATC, display=display.none, tooltip="Adaptive channel line width.")
+atcLineStyle = input.string("Solid", "ATC Line Style", options=["Solid", "Dashed", "Dotted"], group=groupATC, display=display.none, tooltip="Adaptive channel line style.")
+atcTransparency = input.int(0, "ATC Line Transparency", minval=0, maxval=100, group=groupATC, display=display.none, tooltip="Adaptive channel line transparency.")
+atcFillBullColor = input.color(color.new(color.green, 90), "ATC Bull Fill Color", group=groupATC, display=display.none, tooltip="Fill color when ATC slope indicates bullish channel.")
+atcFillBearColor = input.color(color.new(color.red, 90), "ATC Bear Fill Color", group=groupATC, display=display.none, tooltip="Fill color when ATC slope indicates bearish channel.")
+
+// Filters, visuals, dashboard, alerts.
+groupFilters = "------ Moving Average / VWAP Filters ------"
+useVWAPFilter = input.bool(true, "Use VWAP Filter", group=groupFilters, display=display.none, tooltip="Use VWAP as a directional filter for continuation signals.")
+useMA20Filter = input.bool(true, "Use 20 MA Filter", group=groupFilters, display=display.none, tooltip="Use 20-period moving average as a directional filter for 2020-style continuation signals.")
+useMA200Filter = input.bool(true, "Use 200 MA Filter", group=groupFilters, display=display.none, tooltip="Use 200-period moving average as a broader trend filter.")
+ma20Type = input.string("EMA", "20 MA Type", options=["SMA", "EMA"], group=groupFilters, display=display.none, tooltip="Moving average type for the 20-period trend filter.")
+ma200Type = input.string("SMA", "200 MA Type", options=["SMA", "EMA"], group=groupFilters, display=display.none, tooltip="Moving average type for the 200-period trend filter.")
+useTrendFilterForReversals = input.bool(false, "Use Trend Filter for Reversal Signals", group=groupFilters, display=display.none, tooltip="If enabled, reversal signals must also pass VWAP/MA trend filters.")
+showFilterLines = input.bool(false, "Show VWAP / MA Filter Lines", group=groupFilters, display=display.none, tooltip="Show VWAP, 20 MA, and 200 MA filter lines on the chart.")
+
+groupVisual = "------ Visual Settings ------"
+showSignalLabels = input.bool(true, "Show Signal Labels", group=groupVisual, display=display.none, tooltip="Show entry signal labels on the chart.")
+showExitLabels = input.bool(true, "Show Exit Labels", group=groupVisual, display=display.none, tooltip="Show exit rotation labels when the fast stochastic reaches the opposite extreme.")
+showStopLines = input.bool(false, "Show Suggested Stop Lines", group=groupVisual, display=display.none, tooltip="Show suggested stop levels based on recent wick highs/lows.")
+signalLabelSize = input.string("small", "Signal Label Size", options=["tiny", "small", "normal", "large", "huge"], group=groupVisual, display=display.none, tooltip="Controls the size of signal labels.")
+showSignalQuality = input.bool(true, "Show Signal Quality Grade", group=groupVisual, display=display.none, tooltip="Show A+, A, B, or C quality grade in signal labels.")
+bullQDColor = input.color(color.lime, "Bullish Quad Divergence Label Color", group=groupVisual, display=display.none, tooltip="Label color for bullish quad divergence signals.")
+bearQDColor = input.color(color.red, "Bearish Quad Divergence Label Color", group=groupVisual, display=display.none, tooltip="Label color for bearish quad divergence signals.")
+bullFlagColor = input.color(color.green, "Bull Flag Label Color", group=groupVisual, display=display.none, tooltip="Label color for bullish embedded flag signals.")
+bearFlagColor = input.color(color.maroon, "Bear Flag Label Color", group=groupVisual, display=display.none, tooltip="Label color for bearish embedded flag signals.")
+exitColor = input.color(color.yellow, "Exit Label Color", group=groupVisual, display=display.none, tooltip="Label color for stochastic exit labels.")
+textColor = input.color(color.white, "Signal Text Color", group=groupVisual, display=display.none, tooltip="Text color for signal labels.")
+stopATRLen = input.int(14, "Stop ATR Length", minval=1, group=groupVisual, display=display.none, tooltip="ATR length used for optional flag stop buffer.")
+stopATRMult = input.float(0.25, "Stop ATR Buffer Multiplier", minval=0.0, step=0.05, group=groupVisual, display=display.none, tooltip="ATR buffer added to suggested stop levels.")
+
+groupDash = "------ Dashboard Settings ------"
+dashboardPosition = input.string("Top Right", "Dashboard Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left"], group=groupDash, display=display.none, tooltip="Dashboard location.")
+dashboardTextSize = input.string("Small", "Dashboard Text Size", options=["Tiny", "Small", "Normal"], group=groupDash, display=display.none, tooltip="Dashboard text size.")
+
+groupAlerts = "------ Alert Settings ------"
+enableAlertConditions = input.bool(true, "Enable Alert Conditions", group=groupAlerts, display=display.none, tooltip="Master switch for alertcondition outputs. Disable only if you want all alert conditions held false.")
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper functions
+// ─────────────────────────────────────────────────────────────────────────────
+f_stoch(_kLen, _dLen) =>
+    // Pine v6 stoch argument order is source, high, low, length.
+    k = ta.stoch(close, high, low, _kLen)
+    d = ta.sma(k, _dLen)
+    d
+
+f_ma(_src, _len, _type) =>
+    _type == "EMA" ? ta.ema(_src, _len) : ta.sma(_src, _len)
+
+f_labelSize(_s) =>
+    switch _s
+        "tiny" => size.tiny
+        "small" => size.small
+        "normal" => size.normal
+        "large" => size.large
+        "huge" => size.huge
+        => size.small
+
+f_lineStyle(_s) =>
+    _s == "Dashed" ? line.style_dashed : _s == "Dotted" ? line.style_dotted : line.style_solid
+
+f_tablePos(_s) =>
+    switch _s
+        "Top Right" => position.top_right
+        "Top Left" => position.top_left
+        "Bottom Right" => position.bottom_right
+        "Bottom Left" => position.bottom_left
+        "Middle Right" => position.middle_right
+        "Middle Left" => position.middle_left
+        => position.top_right
+
+f_tableSize(_s) =>
+    _s == "Tiny" ? size.tiny : _s == "Normal" ? size.normal : size.small
+
+f_stochStatus(_v) =>
+    _v < oversoldLevel ? "OS" : _v > overboughtLevel ? "OB" : "Neutral"
+
+f_slowStatus(_v, _embeddedBull, _embeddedBear) =>
+    _embeddedBull ? "Embedded Bull" : _embeddedBear ? "Embedded Bear" : f_stochStatus(_v)
+
+f_signalText(_base, _atc, _grade) =>
+    gradeSignalsWithATC and showSignalQuality ? (_atc ? _grade + " " + _base + " + ATC" : (_grade == "A+" ? "A " + _base : "C " + _base)) : _base
+
+f_safeLabel(_x, _y, _txt, _style, _yloc, _color) =>
+    label.new(_x, _y, _txt, xloc=xloc.bar_index, yloc=_yloc, style=_style, color=_color, textcolor=textColor, size=f_labelSize(signalLabelSize))
+
+// Adapted from Dix$ons Tackle Box: log regression residual deviation and Pearson R.
+calcDev(src, len) =>
+    float safeSrc = math.max(src, syminfo.mintick)
+    float logSrc = math.log(safeSrc)
+    int period_1 = len - 1
+    float sumX = 0.0
+    float sumXX = 0.0
+    float sumYX = 0.0
+    float sumY = 0.0
+    for i = 1 to len
+        float lSrc = logSrc[i - 1]
+        sumX += i
+        sumXX += i * i
+        sumYX += i * lSrc
+        sumY += lSrc
+    float slope = nz((len * sumYX - sumX * sumY) / (len * sumXX - sumX * sumX))
+    float avg = sumY / len
+    float intercept = avg - slope * sumX / len + slope
+    float sumDev = 0.0
+    float sumDxx = 0.0
+    float sumDyy = 0.0
+    float sumDyx = 0.0
+    float regres = intercept + slope * period_1 * 0.5
+    float sumSlp = intercept
+    for i = 0 to period_1
+        float lSrc = logSrc[i]
+        float dxt = lSrc - avg
+        float dyt = sumSlp - regres
+        lSrc -= sumSlp
+        sumSlp += slope
+        sumDxx += dxt * dxt
+        sumDyy += dyt * dyt
+        sumDyx += dxt * dyt
+        sumDev += lSrc * lSrc
+    float stdDev = math.sqrt(sumDev / period_1)
+    float divisor = sumDxx * sumDyy
+    float r = nz(sumDyx / math.sqrt(divisor))
+    [stdDev, math.abs(r), slope, intercept]
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quad stochastic engine
+// ─────────────────────────────────────────────────────────────────────────────
+stochFast = f_stoch(kFast, dFast)
+stoch2 = f_stoch(kStoch2, dStoch2)
+stoch3 = f_stoch(kStoch3, dStoch3)
+stochSlow = f_stoch(kSlow, dSlow)
+quadOversold = stochFast < oversoldLevel and stoch2 < oversoldLevel and stoch3 < oversoldLevel and stochSlow < oversoldLevel
+quadOverbought = stochFast > overboughtLevel and stoch2 > overboughtLevel and stoch3 > overboughtLevel and stochSlow > overboughtLevel
+slowEmbeddedBull = ta.lowest(stochSlow, embeddedBars) > embeddedBullLevel
+slowEmbeddedBear = ta.highest(stochSlow, embeddedBars) < embeddedBearLevel
+fastTurnsUp = stochFast > stochFast[1] and stochFast[1] <= stochFast[2]
+fastTurnsDown = stochFast < stochFast[1] and stochFast[1] >= stochFast[2]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Divergence detection (confirmed pivots; signals plot back on pivot bar)
+// ─────────────────────────────────────────────────────────────────────────────
+bodyLow = math.min(open, close)
+bodyHigh = math.max(open, close)
+divLowSource = divPriceSource == "Body" ? bodyLow : low
+divHighSource = divPriceSource == "Body" ? bodyHigh : high
+pricePivotLow = ta.pivotlow(divLowSource, divPivotLeft, divPivotRight)
+pricePivotHigh = ta.pivothigh(divHighSource, divPivotLeft, divPivotRight)
+stochPivotLow = ta.pivotlow(stochFast, divPivotLeft, divPivotRight)
+stochPivotHigh = ta.pivothigh(stochFast, divPivotLeft, divPivotRight)
+recentQuadOversold = nz(ta.barssince(quadOversold), 100000) <= quadLookbackBars
+recentQuadOverbought = nz(ta.barssince(quadOverbought), 100000) <= quadLookbackBars
+eqTol = equalToleranceTicks * syminfo.mintick
+
+var float previousPivotLow = na
+var float currentPivotLow = na
+var float previousStochPivotLow = na
+var float currentStochPivotLow = na
+var float previousPivotHigh = na
+var float currentPivotHigh = na
+var float previousStochPivotHigh = na
+var float currentStochPivotHigh = na
+var int currentLowPivotBar = na
+var int currentHighPivotBar = na
+newLowPivot = not na(pricePivotLow) and not na(stochPivotLow)
+newHighPivot = not na(pricePivotHigh) and not na(stochPivotHigh)
+if newLowPivot
+    previousPivotLow := currentPivotLow
+    previousStochPivotLow := currentStochPivotLow
+    currentPivotLow := pricePivotLow
+    currentStochPivotLow := stochPivotLow
+    currentLowPivotBar := bar_index - divPivotRight
+if newHighPivot
+    previousPivotHigh := currentPivotHigh
+    previousStochPivotHigh := currentStochPivotHigh
+    currentPivotHigh := pricePivotHigh
+    currentStochPivotHigh := stochPivotHigh
+    currentHighPivotBar := bar_index - divPivotRight
+
+priceLowerOrEqualLow = newLowPivot and not na(previousPivotLow) and (currentPivotLow < previousPivotLow or (allowEqualPriceDiv and math.abs(currentPivotLow - previousPivotLow) <= eqTol))
+stochHigherLow = newLowPivot and not na(previousStochPivotLow) and currentStochPivotLow > previousStochPivotLow
+priceHigherOrEqualHigh = newHighPivot and not na(previousPivotHigh) and (currentPivotHigh > previousPivotHigh or (allowEqualPriceDiv and math.abs(currentPivotHigh - previousPivotHigh) <= eqTol))
+stochLowerHigh = newHighPivot and not na(previousStochPivotHigh) and currentStochPivotHigh < previousStochPivotHigh
+bullishDivergence = priceLowerOrEqualLow and stochHigherLow
+bearishDivergence = priceHigherOrEqualHigh and stochLowerHigh
+bullQuadDivSignal = enableQuadRotation and bullishDivergence and (not requireQuadForDiv or recentQuadOversold)
+bearQuadDivSignal = enableQuadRotation and bearishDivergence and (not requireQuadForDiv or recentQuadOverbought)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Embedded flags and trend filters
+// ─────────────────────────────────────────────────────────────────────────────
+var int lastBullFlagBar = na
+var int lastBearFlagBar = na
+var int lastBullQDBar = na
+var int lastBearQDBar = na
+bullFlagRaw = enableFlagSignals and enableBullFlags and slowEmbeddedBull and stochFast <= flagFastPullbackBull
+bearFlagRaw = enableFlagSignals and enableBearFlags and slowEmbeddedBear and stochFast >= flagFastPullbackBear
+bullFlagCandidate = bullFlagRaw and (not useFastTurnConfirmation or fastTurnsUp)
+bearFlagCandidate = bearFlagRaw and (not useFastTurnConfirmation or fastTurnsDown)
+bullSpacingOK = na(lastBullFlagBar) or bar_index - lastBullFlagBar > minBarsBetweenSignals
+bearSpacingOK = na(lastBearFlagBar) or bar_index - lastBearFlagBar > minBarsBetweenSignals
+bullFlagSignal = bullFlagCandidate and bullSpacingOK
+bearFlagSignal = bearFlagCandidate and bearSpacingOK
+
+ma20 = f_ma(close, 20, ma20Type)
+ma200 = f_ma(close, 200, ma200Type)
+vwapValue = ta.vwap(hlc3)
+bullTrendFilter = (not useVWAPFilter or close > vwapValue) and (not useMA20Filter or close > ma20) and (not useMA200Filter or close > ma200)
+bearTrendFilter = (not useVWAPFilter or close < vwapValue) and (not useMA20Filter or close < ma20) and (not useMA200Filter or close < ma200)
+bullFlagSignalFiltered = bullFlagSignal and bullTrendFilter
+bearFlagSignalFiltered = bearFlagSignal and bearTrendFilter
+bullQuadDivTrendFiltered = bullQuadDivSignal and (not useTrendFilterForReversals or bullTrendFilter)
+bearQuadDivTrendFiltered = bearQuadDivSignal and (not useTrendFilterForReversals or bearTrendFilter)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Adaptive Trend Channel: verbose calls preserve the Tackle Box period sets.
+// This version calculates on all bars so nearUpper/nearLower can grade historical
+// signals; visuals still use persistent line objects updated on the last bar.
+// ─────────────────────────────────────────────────────────────────────────────
+[stdST01, rST01, slpST01, intST01] = calcDev(atcSource, 20)
+[stdST02, rST02, slpST02, intST02] = calcDev(atcSource, 30)
+[stdST03, rST03, slpST03, intST03] = calcDev(atcSource, 40)
+[stdST04, rST04, slpST04, intST04] = calcDev(atcSource, 50)
+[stdST05, rST05, slpST05, intST05] = calcDev(atcSource, 60)
+[stdST06, rST06, slpST06, intST06] = calcDev(atcSource, 70)
+[stdST07, rST07, slpST07, intST07] = calcDev(atcSource, 80)
+[stdST08, rST08, slpST08, intST08] = calcDev(atcSource, 90)
+[stdST09, rST09, slpST09, intST09] = calcDev(atcSource, 100)
+[stdST10, rST10, slpST10, intST10] = calcDev(atcSource, 110)
+[stdST11, rST11, slpST11, intST11] = calcDev(atcSource, 120)
+[stdST12, rST12, slpST12, intST12] = calcDev(atcSource, 130)
+[stdST13, rST13, slpST13, intST13] = calcDev(atcSource, 140)
+[stdST14, rST14, slpST14, intST14] = calcDev(atcSource, 150)
+[stdST15, rST15, slpST15, intST15] = calcDev(atcSource, 160)
+[stdST16, rST16, slpST16, intST16] = calcDev(atcSource, 170)
+[stdST17, rST17, slpST17, intST17] = calcDev(atcSource, 180)
+[stdST18, rST18, slpST18, intST18] = calcDev(atcSource, 190)
+[stdST19, rST19, slpST19, intST19] = calcDev(atcSource, 200)
+
+[stdLT01, rLT01, slpLT01, intLT01] = calcDev(atcSource, 300)
+[stdLT02, rLT02, slpLT02, intLT02] = calcDev(atcSource, 350)
+[stdLT03, rLT03, slpLT03, intLT03] = calcDev(atcSource, 400)
+[stdLT04, rLT04, slpLT04, intLT04] = calcDev(atcSource, 450)
+[stdLT05, rLT05, slpLT05, intLT05] = calcDev(atcSource, 500)
+[stdLT06, rLT06, slpLT06, intLT06] = calcDev(atcSource, 550)
+[stdLT07, rLT07, slpLT07, intLT07] = calcDev(atcSource, 600)
+[stdLT08, rLT08, slpLT08, intLT08] = calcDev(atcSource, 650)
+[stdLT09, rLT09, slpLT09, intLT09] = calcDev(atcSource, 700)
+[stdLT10, rLT10, slpLT10, intLT10] = calcDev(atcSource, 750)
+[stdLT11, rLT11, slpLT11, intLT11] = calcDev(atcSource, 800)
+[stdLT12, rLT12, slpLT12, intLT12] = calcDev(atcSource, 850)
+[stdLT13, rLT13, slpLT13, intLT13] = calcDev(atcSource, 900)
+[stdLT14, rLT14, slpLT14, intLT14] = calcDev(atcSource, 950)
+[stdLT15, rLT15, slpLT15, intLT15] = calcDev(atcSource, 1000)
+[stdLT16, rLT16, slpLT16, intLT16] = calcDev(atcSource, 1050)
+[stdLT17, rLT17, slpLT17, intLT17] = calcDev(atcSource, 1100)
+[stdLT18, rLT18, slpLT18, intLT18] = calcDev(atcSource, 1150)
+[stdLT19, rLT19, slpLT19, intLT19] = calcDev(atcSource, 1200)
+
+float atcPearsonST = rST01
+float detDST = stdST01
+float atcSlopeST = slpST01
+float detIST = intST01
+float atcDetectedPeriodST = 20.0
+if rST02 > atcPearsonST
+    atcPearsonST := rST02
+    detDST := stdST02
+    atcSlopeST := slpST02
+    detIST := intST02
+    atcDetectedPeriodST := 30.0
+if rST03 > atcPearsonST
+    atcPearsonST := rST03
+    detDST := stdST03
+    atcSlopeST := slpST03
+    detIST := intST03
+    atcDetectedPeriodST := 40.0
+if rST04 > atcPearsonST
+    atcPearsonST := rST04
+    detDST := stdST04
+    atcSlopeST := slpST04
+    detIST := intST04
+    atcDetectedPeriodST := 50.0
+if rST05 > atcPearsonST
+    atcPearsonST := rST05
+    detDST := stdST05
+    atcSlopeST := slpST05
+    detIST := intST05
+    atcDetectedPeriodST := 60.0
+if rST06 > atcPearsonST
+    atcPearsonST := rST06
+    detDST := stdST06
+    atcSlopeST := slpST06
+    detIST := intST06
+    atcDetectedPeriodST := 70.0
+if rST07 > atcPearsonST
+    atcPearsonST := rST07
+    detDST := stdST07
+    atcSlopeST := slpST07
+    detIST := intST07
+    atcDetectedPeriodST := 80.0
+if rST08 > atcPearsonST
+    atcPearsonST := rST08
+    detDST := stdST08
+    atcSlopeST := slpST08
+    detIST := intST08
+    atcDetectedPeriodST := 90.0
+if rST09 > atcPearsonST
+    atcPearsonST := rST09
+    detDST := stdST09
+    atcSlopeST := slpST09
+    detIST := intST09
+    atcDetectedPeriodST := 100.0
+if rST10 > atcPearsonST
+    atcPearsonST := rST10
+    detDST := stdST10
+    atcSlopeST := slpST10
+    detIST := intST10
+    atcDetectedPeriodST := 110.0
+if rST11 > atcPearsonST
+    atcPearsonST := rST11
+    detDST := stdST11
+    atcSlopeST := slpST11
+    detIST := intST11
+    atcDetectedPeriodST := 120.0
+if rST12 > atcPearsonST
+    atcPearsonST := rST12
+    detDST := stdST12
+    atcSlopeST := slpST12
+    detIST := intST12
+    atcDetectedPeriodST := 130.0
+if rST13 > atcPearsonST
+    atcPearsonST := rST13
+    detDST := stdST13
+    atcSlopeST := slpST13
+    detIST := intST13
+    atcDetectedPeriodST := 140.0
+if rST14 > atcPearsonST
+    atcPearsonST := rST14
+    detDST := stdST14
+    atcSlopeST := slpST14
+    detIST := intST14
+    atcDetectedPeriodST := 150.0
+if rST15 > atcPearsonST
+    atcPearsonST := rST15
+    detDST := stdST15
+    atcSlopeST := slpST15
+    detIST := intST15
+    atcDetectedPeriodST := 160.0
+if rST16 > atcPearsonST
+    atcPearsonST := rST16
+    detDST := stdST16
+    atcSlopeST := slpST16
+    detIST := intST16
+    atcDetectedPeriodST := 170.0
+if rST17 > atcPearsonST
+    atcPearsonST := rST17
+    detDST := stdST17
+    atcSlopeST := slpST17
+    detIST := intST17
+    atcDetectedPeriodST := 180.0
+if rST18 > atcPearsonST
+    atcPearsonST := rST18
+    detDST := stdST18
+    atcSlopeST := slpST18
+    detIST := intST18
+    atcDetectedPeriodST := 190.0
+if rST19 > atcPearsonST
+    atcPearsonST := rST19
+    detDST := stdST19
+    atcSlopeST := slpST19
+    detIST := intST19
+    atcDetectedPeriodST := 200.0
+
+float atcPearsonLT = rLT01
+float detDLT = stdLT01
+float atcSlopeLT = slpLT01
+float detILT = intLT01
+float atcDetectedPeriodLT = 300.0
+if rLT02 > atcPearsonLT
+    atcPearsonLT := rLT02
+    detDLT := stdLT02
+    atcSlopeLT := slpLT02
+    detILT := intLT02
+    atcDetectedPeriodLT := 350.0
+if rLT03 > atcPearsonLT
+    atcPearsonLT := rLT03
+    detDLT := stdLT03
+    atcSlopeLT := slpLT03
+    detILT := intLT03
+    atcDetectedPeriodLT := 400.0
+if rLT04 > atcPearsonLT
+    atcPearsonLT := rLT04
+    detDLT := stdLT04
+    atcSlopeLT := slpLT04
+    detILT := intLT04
+    atcDetectedPeriodLT := 450.0
+if rLT05 > atcPearsonLT
+    atcPearsonLT := rLT05
+    detDLT := stdLT05
+    atcSlopeLT := slpLT05
+    detILT := intLT05
+    atcDetectedPeriodLT := 500.0
+if rLT06 > atcPearsonLT
+    atcPearsonLT := rLT06
+    detDLT := stdLT06
+    atcSlopeLT := slpLT06
+    detILT := intLT06
+    atcDetectedPeriodLT := 550.0
+if rLT07 > atcPearsonLT
+    atcPearsonLT := rLT07
+    detDLT := stdLT07
+    atcSlopeLT := slpLT07
+    detILT := intLT07
+    atcDetectedPeriodLT := 600.0
+if rLT08 > atcPearsonLT
+    atcPearsonLT := rLT08
+    detDLT := stdLT08
+    atcSlopeLT := slpLT08
+    detILT := intLT08
+    atcDetectedPeriodLT := 650.0
+if rLT09 > atcPearsonLT
+    atcPearsonLT := rLT09
+    detDLT := stdLT09
+    atcSlopeLT := slpLT09
+    detILT := intLT09
+    atcDetectedPeriodLT := 700.0
+if rLT10 > atcPearsonLT
+    atcPearsonLT := rLT10
+    detDLT := stdLT10
+    atcSlopeLT := slpLT10
+    detILT := intLT10
+    atcDetectedPeriodLT := 750.0
+if rLT11 > atcPearsonLT
+    atcPearsonLT := rLT11
+    detDLT := stdLT11
+    atcSlopeLT := slpLT11
+    detILT := intLT11
+    atcDetectedPeriodLT := 800.0
+if rLT12 > atcPearsonLT
+    atcPearsonLT := rLT12
+    detDLT := stdLT12
+    atcSlopeLT := slpLT12
+    detILT := intLT12
+    atcDetectedPeriodLT := 850.0
+if rLT13 > atcPearsonLT
+    atcPearsonLT := rLT13
+    detDLT := stdLT13
+    atcSlopeLT := slpLT13
+    detILT := intLT13
+    atcDetectedPeriodLT := 900.0
+if rLT14 > atcPearsonLT
+    atcPearsonLT := rLT14
+    detDLT := stdLT14
+    atcSlopeLT := slpLT14
+    detILT := intLT14
+    atcDetectedPeriodLT := 950.0
+if rLT15 > atcPearsonLT
+    atcPearsonLT := rLT15
+    detDLT := stdLT15
+    atcSlopeLT := slpLT15
+    detILT := intLT15
+    atcDetectedPeriodLT := 1000.0
+if rLT16 > atcPearsonLT
+    atcPearsonLT := rLT16
+    detDLT := stdLT16
+    atcSlopeLT := slpLT16
+    detILT := intLT16
+    atcDetectedPeriodLT := 1050.0
+if rLT17 > atcPearsonLT
+    atcPearsonLT := rLT17
+    detDLT := stdLT17
+    atcSlopeLT := slpLT17
+    detILT := intLT17
+    atcDetectedPeriodLT := 1100.0
+if rLT18 > atcPearsonLT
+    atcPearsonLT := rLT18
+    detDLT := stdLT18
+    atcSlopeLT := slpLT18
+    detILT := intLT18
+    atcDetectedPeriodLT := 1150.0
+if rLT19 > atcPearsonLT
+    atcPearsonLT := rLT19
+    detDLT := stdLT19
+    atcSlopeLT := slpLT19
+    detILT := intLT19
+    atcDetectedPeriodLT := 1200.0
+endYST = math.exp(detIST)
+endYLT = math.exp(detILT)
+atcUpperST = endYST * math.exp(atcDevMultST * detDST)
+atcLowerST = endYST / math.exp(atcDevMultST * detDST)
+atcMidST = endYST
+atcUpperLT = endYLT * math.exp(atcDevMultLT * detDLT)
+atcLowerLT = endYLT / math.exp(atcDevMultLT * detDLT)
+atcMidLT = endYLT
+atcWidthST = atcUpperST - atcLowerST
+atcWidthLT = atcUpperLT - atcLowerLT
+nearLowerST = enableATCFilter and not na(atcWidthST) and atcPearsonST >= minPearsonForATC and close <= atcLowerST + atcWidthST * (atcProximityPct / 100.0)
+nearUpperST = enableATCFilter and not na(atcWidthST) and atcPearsonST >= minPearsonForATC and close >= atcUpperST - atcWidthST * (atcProximityPct / 100.0)
+nearLowerLT = enableATCFilter and not na(atcWidthLT) and atcPearsonLT >= minPearsonForATC and close <= atcLowerLT + atcWidthLT * (atcProximityPct / 100.0)
+nearUpperLT = enableATCFilter and not na(atcWidthLT) and atcPearsonLT >= minPearsonForATC and close >= atcUpperLT - atcWidthLT * (atcProximityPct / 100.0)
+nearLowerATC = atcMode == "Short-Term" ? nearLowerST : atcMode == "Long-Term" ? nearLowerLT : nearLowerST or nearLowerLT
+nearUpperATC = atcMode == "Short-Term" ? nearUpperST : atcMode == "Long-Term" ? nearUpperLT : nearUpperST or nearUpperLT
+
+bullFlagATC = bullFlagSignalFiltered and enableATCFilter and (atcMode == "Short-Term" ? close >= atcMidST : atcMode == "Long-Term" ? close >= atcMidLT : close >= atcMidST or close >= atcMidLT)
+bearFlagATC = bearFlagSignalFiltered and enableATCFilter and (atcMode == "Short-Term" ? close <= atcMidST : atcMode == "Long-Term" ? close <= atcMidLT : close <= atcMidST or close <= atcMidLT)
+bullQuadDivATC = bullQuadDivTrendFiltered and nearLowerATC
+bearQuadDivATC = bearQuadDivTrendFiltered and nearUpperATC
+finalBullQuadDivRaw = requireATCForSignals ? bullQuadDivATC : bullQuadDivTrendFiltered
+finalBearQuadDivRaw = requireATCForSignals ? bearQuadDivATC : bearQuadDivTrendFiltered
+finalBullFlagRaw = bullFlagSignalFiltered
+finalBearFlagRaw = bearFlagSignalFiltered
+finalBullQuadDiv = finalBullQuadDivRaw and (na(lastBullQDBar) or bar_index - lastBullQDBar > minBarsBetweenSignals)
+finalBearQuadDiv = finalBearQuadDivRaw and (na(lastBearQDBar) or bar_index - lastBearQDBar > minBarsBetweenSignals)
+finalBullFlag = finalBullFlagRaw
+finalBearFlag = finalBearFlagRaw
+
+if finalBullQuadDiv
+    lastBullQDBar := bar_index
+if finalBearQuadDiv
+    lastBearQDBar := bar_index
+if finalBullFlag
+    lastBullFlagBar := bar_index
+if finalBearFlag
+    lastBearFlagBar := bar_index
+
+// ATC history uses snapshot channel objects. Default cap=1 preserves the original live-only
+// behavior. When cap > 1, the latest N channel snapshots are retained. Cap=0 applies
+// no user cap, but a safety guard still prevents exceeding TradingView line limits.
+var line[] atcHistoryLines = array.new_line()
+f_pushAtcHistoryLine(_x1, _y1, _x2, _y2, _col, _style, _width) =>
+    line histLine = line.new(_x1, _y1, _x2, _y2, xloc=xloc.bar_index, extend=extend.none, color=_col, style=_style, width=_width)
+    array.push(atcHistoryLines, histLine)
+
+f_trimAtcHistory(_linesThisBar) =>
+    int userMaxLines = atcHistoryDisplayCap == 0 ? 480 : math.max(_linesThisBar, atcHistoryDisplayCap * math.max(_linesThisBar, 1))
+    while array.size(atcHistoryLines) > userMaxLines
+        line oldLine = array.shift(atcHistoryLines)
+        line.delete(oldLine)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ATC visual lines; persistent objects are updated on the last bar only.
+// ─────────────────────────────────────────────────────────────────────────────
+var line upperLineST = na
+var line lowerLineST = na
+var line midLineST = na
+var line upperLineLT = na
+var line lowerLineLT = na
+var line midLineLT = na
+var linefill fillST = na
+var linefill fillLT = na
+showST = enableATCFilter and showATC and (atcMode == "Short-Term" or atcMode == "Both") and not na(atcDetectedPeriodST) and not na(atcUpperST) and not na(atcLowerST)
+showLT = enableATCFilter and showATC and (atcMode == "Long-Term" or atcMode == "Both") and not na(atcDetectedPeriodLT) and not na(atcUpperLT) and not na(atcLowerLT)
+historyMode = atcHistoryDisplayCap != 1
+
+// Retained ATC history is intentionally sparse: it records a completed channel
+// only when the selected ATC slope flips between downtrend and uptrend. This
+// avoids the unreadable fan of every-bar regression snapshots.
+if historyMode
+    int linesThisBar = 0
+    stTrendNow = atcSlopeST < 0
+    stTrendPrev = atcSlopeST[1] < 0
+    stTrendFlip = showST and not na(atcSlopeST[1]) and stTrendNow != stTrendPrev
+    if stTrendFlip
+        prevPeriodST = int(atcDetectedPeriodST[1])
+        startYSTHist = math.exp(detIST[1] + atcSlopeST[1] * (atcDetectedPeriodST[1] - 1))
+        endYSTHist = math.exp(detIST[1])
+        startBarSTHist = bar_index - prevPeriodST
+        endBarSTHist = bar_index - 1
+        ulSTHist = startYSTHist * math.exp(atcDevMultST * detDST[1])
+        urSTHist = endYSTHist * math.exp(atcDevMultST * detDST[1])
+        llSTHist = startYSTHist / math.exp(atcDevMultST * detDST[1])
+        lrSTHist = endYSTHist / math.exp(atcDevMultST * detDST[1])
+        f_pushAtcHistoryLine(startBarSTHist, ulSTHist, endBarSTHist, urSTHist, color.new(atcUpperColorST, atcTransparency), f_lineStyle(atcLineStyle), atcLineWidth)
+        f_pushAtcHistoryLine(startBarSTHist, llSTHist, endBarSTHist, lrSTHist, color.new(atcLowerColorST, atcTransparency), f_lineStyle(atcLineStyle), atcLineWidth)
+        linesThisBar += 2
+        if showATCMidline
+            f_pushAtcHistoryLine(startBarSTHist, startYSTHist, endBarSTHist, endYSTHist, color.new(atcMidColor, atcTransparency), line.style_dashed, atcLineWidth)
+            linesThisBar += 1
+    ltTrendNow = atcSlopeLT < 0
+    ltTrendPrev = atcSlopeLT[1] < 0
+    ltTrendFlip = showLT and not na(atcSlopeLT[1]) and ltTrendNow != ltTrendPrev
+    if ltTrendFlip
+        prevPeriodLT = int(atcDetectedPeriodLT[1])
+        startYLTHist = math.exp(detILT[1] + atcSlopeLT[1] * (atcDetectedPeriodLT[1] - 1))
+        endYLTHist = math.exp(detILT[1])
+        startBarLTHist = bar_index - prevPeriodLT
+        endBarLTHist = bar_index - 1
+        ulLTHist = startYLTHist * math.exp(atcDevMultLT * detDLT[1])
+        urLTHist = endYLTHist * math.exp(atcDevMultLT * detDLT[1])
+        llLTHist = startYLTHist / math.exp(atcDevMultLT * detDLT[1])
+        lrLTHist = endYLTHist / math.exp(atcDevMultLT * detDLT[1])
+        f_pushAtcHistoryLine(startBarLTHist, ulLTHist, endBarLTHist, urLTHist, color.new(atcUpperColorLT, atcTransparency), f_lineStyle(atcLineStyle), atcLineWidth)
+        f_pushAtcHistoryLine(startBarLTHist, llLTHist, endBarLTHist, lrLTHist, color.new(atcLowerColorLT, atcTransparency), f_lineStyle(atcLineStyle), atcLineWidth)
+        linesThisBar += 2
+        if showATCMidline
+            f_pushAtcHistoryLine(startBarLTHist, startYLTHist, endBarLTHist, endYLTHist, color.new(atcMidColor, atcTransparency), line.style_dashed, atcLineWidth)
+            linesThisBar += 1
+    if linesThisBar > 0
+        f_trimAtcHistory(linesThisBar)
+
+// Current live channel remains a single updated object set in both live-only and
+// history modes. Historical retained channels are separate snapshots above.
+if barstate.islast
+    if showST
+        startYST = math.exp(detIST + atcSlopeST * (atcDetectedPeriodST - 1))
+        startBarST = bar_index - int(atcDetectedPeriodST) + 1
+        ulST = startYST * math.exp(atcDevMultST * detDST)
+        llST = startYST / math.exp(atcDevMultST * detDST)
+        if na(upperLineST)
+            upperLineST := line.new(startBarST, ulST, bar_index, atcUpperST, color=color.new(atcUpperColorST, atcTransparency), width=atcLineWidth, style=f_lineStyle(atcLineStyle), extend=extend.right)
+            lowerLineST := line.new(startBarST, llST, bar_index, atcLowerST, color=color.new(atcLowerColorST, atcTransparency), width=atcLineWidth, style=f_lineStyle(atcLineStyle), extend=extend.right)
+            midLineST := line.new(startBarST, startYST, bar_index, atcMidST, color=color.new(atcMidColor, atcTransparency), width=atcLineWidth, style=line.style_dashed, extend=extend.right)
+        line.set_xy1(upperLineST, startBarST, ulST)
+        line.set_xy2(upperLineST, bar_index, atcUpperST)
+        line.set_color(upperLineST, color.new(atcUpperColorST, atcTransparency))
+        line.set_xy1(lowerLineST, startBarST, llST)
+        line.set_xy2(lowerLineST, bar_index, atcLowerST)
+        line.set_color(lowerLineST, color.new(atcLowerColorST, atcTransparency))
+        line.set_xy1(midLineST, startBarST, startYST)
+        line.set_xy2(midLineST, bar_index, atcMidST)
+        line.set_color(midLineST, showATCMidline ? color.new(atcMidColor, atcTransparency) : color.new(atcMidColor, 100))
+        if showATCFill
+            if not na(fillST)
+                linefill.delete(fillST)
+            fillST := linefill.new(upperLineST, lowerLineST, color=atcSlopeST < 0 ? atcFillBullColor : atcFillBearColor)
+    else
+        if not na(upperLineST)
+            line.delete(upperLineST)
+            line.delete(lowerLineST)
+            line.delete(midLineST)
+            upperLineST := na
+            lowerLineST := na
+            midLineST := na
+    if showLT
+        startYLT = math.exp(detILT + atcSlopeLT * (atcDetectedPeriodLT - 1))
+        startBarLT = bar_index - int(atcDetectedPeriodLT) + 1
+        ulLT = startYLT * math.exp(atcDevMultLT * detDLT)
+        llLT = startYLT / math.exp(atcDevMultLT * detDLT)
+        if na(upperLineLT)
+            upperLineLT := line.new(startBarLT, ulLT, bar_index, atcUpperLT, color=color.new(atcUpperColorLT, atcTransparency), width=atcLineWidth, style=f_lineStyle(atcLineStyle), extend=extend.right)
+            lowerLineLT := line.new(startBarLT, llLT, bar_index, atcLowerLT, color=color.new(atcLowerColorLT, atcTransparency), width=atcLineWidth, style=f_lineStyle(atcLineStyle), extend=extend.right)
+            midLineLT := line.new(startBarLT, startYLT, bar_index, atcMidLT, color=color.new(atcMidColor, atcTransparency), width=atcLineWidth, style=line.style_dashed, extend=extend.right)
+        line.set_xy1(upperLineLT, startBarLT, ulLT)
+        line.set_xy2(upperLineLT, bar_index, atcUpperLT)
+        line.set_color(upperLineLT, color.new(atcUpperColorLT, atcTransparency))
+        line.set_xy1(lowerLineLT, startBarLT, llLT)
+        line.set_xy2(lowerLineLT, bar_index, atcLowerLT)
+        line.set_color(lowerLineLT, color.new(atcLowerColorLT, atcTransparency))
+        line.set_xy1(midLineLT, startBarLT, startYLT)
+        line.set_xy2(midLineLT, bar_index, atcMidLT)
+        line.set_color(midLineLT, showATCMidline ? color.new(atcMidColor, atcTransparency) : color.new(atcMidColor, 100))
+        if showATCFill
+            if not na(fillLT)
+                linefill.delete(fillLT)
+            fillLT := linefill.new(upperLineLT, lowerLineLT, color=atcSlopeLT < 0 ? atcFillBullColor : atcFillBearColor)
+    else
+        if not na(upperLineLT)
+            line.delete(upperLineLT)
+            line.delete(lowerLineLT)
+            line.delete(midLineLT)
+            upperLineLT := na
+            lowerLineLT := na
+            midLineLT := na
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Labels, stops, exits
+// ─────────────────────────────────────────────────────────────────────────────
+atrStop = ta.atr(stopATRLen)
+var line[] stopLines = array.new_line()
+f_stopLine(_x, _price, _color) =>
+    if showStopLines
+        l = line.new(_x, _price, _x + 8, _price, xloc=xloc.bar_index, extend=extend.none, color=_color, style=line.style_dotted, width=1)
+        array.push(stopLines, l)
+        if array.size(stopLines) > 100
+            old = array.shift(stopLines)
+            line.delete(old)
+
+bullQDText = f_signalText("LONG QD", bullQuadDivATC, "A+")
+bearQDText = f_signalText("SHORT QD", bearQuadDivATC, "A+")
+bullFlagText = gradeSignalsWithATC and showSignalQuality ? (bullFlagATC ? "B BULL FLAG + ATC" : "C BULL FLAG") : "BULL FLAG"
+bearFlagText = gradeSignalsWithATC and showSignalQuality ? (bearFlagATC ? "B BEAR FLAG + ATC" : "C BEAR FLAG") : "BEAR FLAG"
+
+if showSignalLabels and finalBullQuadDiv
+    f_safeLabel(nz(currentLowPivotBar, bar_index), low[divPivotRight], bullQDText, label.style_label_up, yloc.belowbar, bullQDColor)
+    f_stopLine(nz(currentLowPivotBar, bar_index), low[divPivotRight], bullQDColor)
+if showSignalLabels and finalBearQuadDiv
+    f_safeLabel(nz(currentHighPivotBar, bar_index), high[divPivotRight], bearQDText, label.style_label_down, yloc.abovebar, bearQDColor)
+    f_stopLine(nz(currentHighPivotBar, bar_index), high[divPivotRight], bearQDColor)
+if showSignalLabels and finalBullFlag
+    f_safeLabel(bar_index, low, bullFlagText, label.style_label_up, yloc.belowbar, bullFlagColor)
+    f_stopLine(bar_index, ta.lowest(low, divPivotLeft + divPivotRight + 1) - atrStop * stopATRMult, bullFlagColor)
+if showSignalLabels and finalBearFlag
+    f_safeLabel(bar_index, high, bearFlagText, label.style_label_down, yloc.abovebar, bearFlagColor)
+    f_stopLine(bar_index, ta.highest(high, divPivotLeft + divPivotRight + 1) + atrStop * stopATRMult, bearFlagColor)
+
+longExitCondition = ta.crossover(stochFast, overboughtLevel)
+shortExitCondition = ta.crossunder(stochFast, oversoldLevel)
+var int activeTradeDirection = 0
+longExitTriggered = activeTradeDirection == 1 and longExitCondition
+shortExitTriggered = activeTradeDirection == -1 and shortExitCondition
+if showExitLabels and longExitTriggered
+    f_safeLabel(bar_index, high, "EXIT 9,3 > " + str.tostring(overboughtLevel, "#.##"), label.style_label_down, yloc.abovebar, exitColor)
+if showExitLabels and shortExitTriggered
+    f_safeLabel(bar_index, low, "EXIT 9,3 < " + str.tostring(oversoldLevel, "#.##"), label.style_label_up, yloc.belowbar, exitColor)
+if longExitTriggered or shortExitTriggered
+    activeTradeDirection := 0
+if finalBullQuadDiv or finalBullFlag
+    activeTradeDirection := 1
+if finalBearQuadDiv or finalBearFlag
+    activeTradeDirection := -1
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+var table dash = table.new(f_tablePos(dashboardPosition), 2, 8, border_width=1)
+atcState = not enableATCFilter ? "Disabled" : nearLowerATC ? "Near Lower" : nearUpperATC ? "Near Upper" : "Mid"
+signalState = finalBullQuadDiv ? (bullQuadDivATC ? "LONG QD + ATC" : "LONG QD") : finalBearQuadDiv ? (bearQuadDivATC ? "SHORT QD + ATC" : "SHORT QD") : finalBullFlag ? (bullFlagATC ? "BULL FLAG + ATC" : "BULL FLAG") : finalBearFlag ? (bearFlagATC ? "BEAR FLAG + ATC" : "BEAR FLAG") : "None"
+quadState = quadOversold ? "Oversold" : quadOverbought ? "Overbought" : "None"
+if barstate.islast and enableDashboard
+    tSize = f_tableSize(dashboardTextSize)
+    table.cell(dash, 0, 0, "9,3", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=tSize)
+    table.cell(dash, 1, 0, f_stochStatus(stochFast), text_size=tSize)
+    table.cell(dash, 0, 1, "14,3", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=tSize)
+    table.cell(dash, 1, 1, f_stochStatus(stoch2), text_size=tSize)
+    table.cell(dash, 0, 2, "44,3", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=tSize)
+    table.cell(dash, 1, 2, f_stochStatus(stoch3), text_size=tSize)
+    table.cell(dash, 0, 3, "60,10", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=tSize)
+    table.cell(dash, 1, 3, f_slowStatus(stochSlow, slowEmbeddedBull, slowEmbeddedBear), text_size=tSize)
+    table.cell(dash, 0, 4, "Quad", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=tSize)
+    table.cell(dash, 1, 4, quadState, text_size=tSize)
+    table.cell(dash, 0, 5, "Embedded", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=tSize)
+    table.cell(dash, 1, 5, slowEmbeddedBull ? "Bull" : slowEmbeddedBear ? "Bear" : "None", text_size=tSize)
+    table.cell(dash, 0, 6, "ATC", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=tSize)
+    table.cell(dash, 1, 6, atcState, text_size=tSize)
+    table.cell(dash, 0, 7, "Signal", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=tSize)
+    table.cell(dash, 1, 7, signalState, text_size=tSize)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Global plots and alerts
+// ─────────────────────────────────────────────────────────────────────────────
+plot(showFilterLines ? vwapValue : na, "VWAP Filter", color=color.new(color.yellow, 0), linewidth=1)
+plot(showFilterLines ? ma20 : na, "20 MA Filter", color=color.new(color.aqua, 0), linewidth=1)
+plot(showFilterLines ? ma200 : na, "200 MA Filter", color=color.new(color.orange, 0), linewidth=1)
+plot(showStochDebugPlots ? stochFast : na, "Fast 9,3 Stoch", display=display.data_window)
+plot(showStochDebugPlots ? stoch2 : na, "14,3 Stoch", display=display.data_window)
+plot(showStochDebugPlots ? stoch3 : na, "44,3 Stoch", display=display.data_window)
+plot(showStochDebugPlots ? stochSlow : na, "Slow 60,10 Stoch", display=display.data_window)
+
+alertcondition(enableAlertConditions and finalBullQuadDiv, "Bullish Quad Divergence", "Dix$on Quad Rotation: Bullish Quad Divergence detected.")
+alertcondition(enableAlertConditions and bullQuadDivATC, "Bullish Quad Divergence + ATC", "Dix$on Quad Rotation: Bullish Quad Divergence near ATC lower channel.")
+alertcondition(enableAlertConditions and finalBearQuadDiv, "Bearish Quad Divergence", "Dix$on Quad Rotation: Bearish Quad Divergence detected.")
+alertcondition(enableAlertConditions and bearQuadDivATC, "Bearish Quad Divergence + ATC", "Dix$on Quad Rotation: Bearish Quad Divergence near ATC upper channel.")
+alertcondition(enableAlertConditions and finalBullFlag, "Bull Flag", "Dix$on Quad Rotation: Bullish embedded flag signal detected.")
+alertcondition(enableAlertConditions and finalBearFlag, "Bear Flag", "Dix$on Quad Rotation: Bearish embedded flag signal detected.")
+alertcondition(enableAlertConditions and bullFlagATC, "Bull Flag + ATC", "Dix$on Quad Rotation: Bullish embedded flag with ATC confirmation.")
+alertcondition(enableAlertConditions and bearFlagATC, "Bear Flag + ATC", "Dix$on Quad Rotation: Bearish embedded flag with ATC confirmation.")
+alertcondition(enableAlertConditions and longExitTriggered, "Long Exit", "Dix$on Quad Rotation: Long exit triggered by 9,3 stochastic reaching overbought.")
+alertcondition(enableAlertConditions and shortExitTriggered, "Short Exit", "Dix$on Quad Rotation: Short exit triggered by 9,3 stochastic reaching oversold.")
+alertcondition(enableAlertConditions and quadOversold, "Quad Oversold Environment", "Dix$on Quad Rotation: All four stochastics are oversold.")
+alertcondition(enableAlertConditions and quadOverbought, "Quad Overbought Environment", "Dix$on Quad Rotation: All four stochastics are overbought.")
+alertcondition(enableAlertConditions and slowEmbeddedBull, "Slow Stochastic Embedded Bull", "Dix$on Quad Rotation: 60,10 stochastic is embedded bullish.")
+alertcondition(enableAlertConditions and slowEmbeddedBear, "Slow Stochastic Embedded Bear", "Dix$on Quad Rotation: 60,10 stochastic is embedded bearish.")
