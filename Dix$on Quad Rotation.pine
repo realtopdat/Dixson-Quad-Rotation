@@ -142,8 +142,8 @@ f_tableSize(_s) =>
 f_stochStatus(_v) =>
     _v < oversoldLevel ? "OS" : _v > overboughtLevel ? "OB" : "Neutral"
 
-f_slowStatus(_v) =>
-    slowEmbeddedBull ? "Embedded Bull" : slowEmbeddedBear ? "Embedded Bear" : f_stochStatus(_v)
+f_slowStatus(_v, _embeddedBull, _embeddedBear) =>
+    _embeddedBull ? "Embedded Bull" : _embeddedBear ? "Embedded Bear" : f_stochStatus(_v)
 
 f_signalText(_base, _atc, _grade) =>
     gradeSignalsWithATC and showSignalQuality ? (_atc ? _grade + " " + _base + " + ATC" : (_grade == "A+" ? "A " + _base : "C " + _base)) : _base
@@ -729,7 +729,7 @@ if barstate.islast and enableDashboard
     table.cell(dash, 0, 2, "44,3", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=tSize)
     table.cell(dash, 1, 2, f_stochStatus(stoch3), text_size=tSize)
     table.cell(dash, 0, 3, "60,10", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=tSize)
-    table.cell(dash, 1, 3, f_slowStatus(stochSlow), text_size=tSize)
+    table.cell(dash, 1, 3, f_slowStatus(stochSlow, slowEmbeddedBull, slowEmbeddedBear), text_size=tSize)
     table.cell(dash, 0, 4, "Quad", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=tSize)
     table.cell(dash, 1, 4, quadState, text_size=tSize)
     table.cell(dash, 0, 5, "Embedded", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=tSize)
