@@ -1,0 +1,1594 @@
+//@version=6
+indicator("Dix$ons Tackle Box", overlay=true,  max_bars_back = 1200)
+
+//version 1.0
+
+// ─────────────────────────────────────────────────────────────────────────────
+// “Tackle Box” master toggles for each sub-indicator
+// ─────────────────────────────────────────────────────────────────────────────
+
+groupTB       = "Tackle Box"
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Moving Averages & EMAs (per-slot slope in labels + per-slot label toggles + 5th slot)
+// ─────────────────────────────────────────────────────────────────────────────
+enableMAEMA   = input.bool(true,  "Enable MA's", group=groupTB, inline="MAROW", display=display.none)
+
+// NEW: master-row inline slot toggles (1–5) in the same master group
+// These sit alongside the master MA/EMA feature and gate each slot globally.
+_maRow1 = input.bool(true,  "1", group=groupTB, inline="MAROW", display=display.none, tooltip="Master-row toggle for MA/EMA 1")
+_maRow2 = input.bool(true,  "2", group=groupTB, inline="MAROW", display=display.none, tooltip="Master-row toggle for MA/EMA 2")
+_maRow3 = input.bool(true,  "3", group=groupTB, inline="MAROW", display=display.none, tooltip="Master-row toggle for MA/EMA 3")
+_maRow4 = input.bool(true,  "4", group=groupTB, inline="MAROW", display=display.none, tooltip="Master-row toggle for MA/EMA 4")
+_maRow5 = input.bool(true, "5", group=groupTB, inline="MAROW", display=display.none, tooltip="Master-row toggle for MA/EMA 5")
+
+groupMAEMA        = "------ MA & EMA Settings ------"
+i_mtf_mode        = input.bool(true, "MTF Smoothed Mode", tooltip="If enabled, higher-TF lines only update on new HTF bars (and on the last bar) to reduce noise.", group=groupMAEMA, display=display.none)
+
+
+// ── per-slot label feature toggles
+lHelp = "Affects only the label text for this slot."
+
+// Helper: map string -> label size enum
+f_lblSize(_s) =>
+    switch _s
+        "tiny"   => size.tiny
+        "small"  => size.small
+        "normal" => size.normal
+        "large"  => size.large
+        "huge"   => size.huge
+        => size.tiny
+
+// NEW: map string -> plot style (gives a simple style choice per slot)
+f_plotStyle(_s) =>
+    switch _s
+        "Solid"   => plot.style_line
+        "Step"    => plot.style_stepline
+        "Circles" => plot.style_circles
+        => plot.style_line
+
+// Slot 1 (organized + inline)
+group1 = "MA/EMA 1"
+en1    = input.bool(true, "Enable MA/EMA 1", group=group1, inline="S1A", display=display.none)
+col1   = input.color(color.purple, "", group=group1, inline="S1A", display=display.none)
+lbl1   = input.bool(true, "Show Label", group=group1, inline="S1B", display=display.none)
+slp1   = input.bool(true, "Slope", tooltip=lHelp, group=group1, inline="S1B", display=display.none)
+lCore1 = input.bool(false, "Len+Type", tooltip=lHelp, group=group1, inline="S1B", display=display.none)
+lTF1   = input.bool(true, "TF", tooltip=lHelp, group=group1, inline="S1B", display=display.none)
+lUnit1 = input.bool(false, "'slope' text", tooltip=lHelp, group=group1, inline="S1B", display=display.none)
+type1  = input.string("EMA", "Type", options=["MA","EMA"], group=group1, inline="S1C", display=display.none)
+len1   = input.int(9, "Length", group=group1, inline="S1C", display=display.none)
+tf1    = input.timeframe("", "Timeframe", group=group1, inline="S1D", display=display.none)
+w1     = input.int(1, "Width", minval=1, maxval=5, group=group1, inline="S1D", display=display.none)
+sty1   = input.string("Solid", "Plot Style", options=["Solid","Step","Circles"], group=group1, inline="S1E", display=display.none)
+lSize1 = input.string("tiny", "Label Size", options=["tiny","small","normal","large","huge"], group=group1, inline="S1E", display=display.none)
+
+// Slot 2  — same layout as Slot 1
+group2 = "MA/EMA 2"
+en2    = input.bool(true,  "Enable MA/EMA 2", group=group2, inline="S2A", display=display.none)
+col2   = input.color(color.orange, "",  group=group2, inline="S2A", display=display.none)
+lbl2   = input.bool(true,  "Show Label",     group=group2, inline="S2B", display=display.none)
+slp2   = input.bool(true,  "Slope",          tooltip=lHelp, group=group2, inline="S2B", display=display.none)
+lCore2 = input.bool(false, "Len+Type",       tooltip=lHelp, group=group2, inline="S2B", display=display.none)
+lTF2   = input.bool(true,  "TF",             tooltip=lHelp, group=group2, inline="S2B", display=display.none)
+lUnit2 = input.bool(false, "'slope' text",   tooltip=lHelp, group=group2, inline="S2B", display=display.none)
+type2  = input.string("EMA", "Type", options=["MA","EMA"], group=group2, inline="S2C", display=display.none)
+len2   = input.int(20, "Length",             group=group2, inline="S2C", display=display.none)
+tf2    = input.timeframe("", "Timeframe",    group=group2, inline="S2D", display=display.none)
+w2     = input.int(1, "Width", minval=1, maxval=5, group=group2, inline="S2D", display=display.none)
+sty2   = input.string("Solid", "Plot Style", options=["Solid","Step","Circles"], group=group2, inline="S2E", display=display.none)
+lSize2 = input.string("tiny", "Label Size",  options=["tiny","small","normal","large","huge"], group=group2, inline="S2E", display=display.none)
+
+// Slot 3  — same layout as Slot 1
+group3 = "MA/EMA 3"
+en3    = input.bool(true,  "Enable MA/EMA 3", group=group3, inline="S3A", display=display.none)
+col3   = input.color(color.rgb(0,153,255), "", group=group3, inline="S3A", display=display.none)
+lbl3   = input.bool(true,  "Show Label",      group=group3, inline="S3B", display=display.none)
+slp3   = input.bool(true,  "Slope",           tooltip=lHelp, group=group3, inline="S3B", display=display.none)
+lCore3 = input.bool(false, "Len+Type",        tooltip=lHelp, group=group3, inline="S3B", display=display.none)
+lTF3   = input.bool(true,  "TF",              tooltip=lHelp, group=group3, inline="S3B", display=display.none)
+lUnit3 = input.bool(false, "'slope' text",    tooltip=lHelp, group=group3, inline="S3B", display=display.none)
+type3  = input.string("EMA", "Type", options=["MA","EMA"], group=group3, inline="S3C", display=display.none)
+len3   = input.int(50, "Length",              group=group3, inline="S3C", display=display.none)
+tf3    = input.timeframe("", "Timeframe",     group=group3, inline="S3D", display=display.none)
+w3     = input.int(1, "Width", minval=1, maxval=5, group=group3, inline="S3D", display=display.none)
+sty3   = input.string("Solid", "Plot Style",  options=["Solid","Step","Circles"], group=group3, inline="S3E", display=display.none)
+lSize3 = input.string("tiny", "Label Size",   options=["tiny","small","normal","large","huge"], group=group3, inline="S3E", display=display.none)
+
+// Slot 4  — same layout as Slot 1
+group4 = "MA/EMA 4"
+en4    = input.bool(true,  "Enable MA/EMA 4", group=group4, inline="S4A", display=display.none)
+col4   = input.color(color.white, "",    group=group4, inline="S4A", display=display.none)
+lbl4   = input.bool(true,  "Show Label",      group=group4, inline="S4B", display=display.none)
+slp4   = input.bool(true,  "Slope",           tooltip=lHelp, group=group4, inline="S4B", display=display.none)
+lCore4 = input.bool(false, "Len+Type",        tooltip=lHelp, group=group4, inline="S4B", display=display.none)
+lTF4   = input.bool(true,  "TF",              tooltip=lHelp, group=group4, inline="S4B", display=display.none)
+lUnit4 = input.bool(false, "'slope' text",    tooltip=lHelp, group=group4, inline="S4B", display=display.none)
+type4  = input.string("MA", "Type", options=["MA","EMA"], group=group4, inline="S4C", display=display.none)
+len4   = input.int(200, "Length",             group=group4, inline="S4C", display=display.none)
+tf4    = input.timeframe("", "Timeframe",     group=group4, inline="S4D", display=display.none)
+w4     = input.int(1, "Width", minval=1, maxval=5, group=group4, inline="S4D", display=display.none)
+sty4   = input.string("Solid", "Plot Style",  options=["Solid","Step","Circles"], group=group4, inline="S4E", display=display.none)
+lSize4 = input.string("tiny", "Label Size",   options=["tiny","small","normal","large","huge"], group=group4, inline="S4E", display=display.none)
+
+// Slot 5  — same layout as Slot 1
+group5 = "MA/EMA 5"
+en5    = input.bool(true, "Enable MA/EMA 5", group=group5, inline="S5A", display=display.none)
+col5   = input.color(color.rgb(137, 0, 103), "",   group=group5, inline="S5A", display=display.none)
+lbl5   = input.bool(true, "Show Label",      group=group5, inline="S5B", display=display.none)
+slp5   = input.bool(true,  "Slope",           tooltip=lHelp, group=group5, inline="S5B", display=display.none)
+lCore5 = input.bool(true, "Len+Type",        tooltip=lHelp, group=group5, inline="S5B", display=display.none)
+lTF5   = input.bool(true,  "TF",              tooltip=lHelp, group=group5, inline="S5B", display=display.none)
+lUnit5 = input.bool(false, "'slope' text",    tooltip=lHelp, group=group5, inline="S5B", display=display.none)
+type5  = input.string("EMA", "Type", options=["MA","EMA"], group=group5, inline="S5C", display=display.none)
+len5   = input.int(9, "Length",             group=group5, inline="S5C", display=display.none)
+tf5    = input.timeframe("10", "Timeframe",     group=group5, inline="S5D", display=display.none)
+w5     = input.int(1, "Width", minval=1, maxval=5, group=group5, inline="S5D", display=display.none)
+sty5   = input.string("Solid", "Plot Style",  options=["Solid","Step","Circles"], group=group5, inline="S5E", display=display.none)
+lSize5 = input.string("tiny", "Label Size",   options=["tiny","small","normal","large","huge"], group=group5, inline="S5E", display=display.none)
+
+
+// ── helpers
+f_getAvg(_type, _src, _len) =>
+    _type == "MA" ? ta.sma(_src, _len) : ta.ema(_src, _len)
+
+// Plot series (original gating behavior)
+f_getConverted(_tf, _src, _len, _type) =>
+    avg = f_getAvg(_type, _src, _len)
+    if i_mtf_mode
+        [m, b] = request.security(syminfo.tickerid, _tf, [avg, bar_index])
+        var int lastBar = na
+        lastBar := na(lastBar[1]) or b > lastBar[1] ? b : lastBar[1]
+        lastBar != lastBar[1] or barstate.islast ? m : na
+    else
+        _tf == "" ? avg : request.security(syminfo.tickerid, _tf, avg)
+
+// Dense series for slope/history (always filled so Δ works reliably)
+f_getConvertedDense(_tf, _src, _len, _type) =>
+    avg = f_getAvg(_type, _src, _len)
+    _tf == "" ? avg : request.security(syminfo.tickerid, _tf, avg, lookahead=barmerge.lookahead_on)
+
+// ── NEW: angle% in [-100..+100], no lookback, integer
+// Normalize the 1-bar change by instrument tick size to boost dynamic range.
+// anglePct = atan( (Δ / mintick) ) / (π/2) * 100
+f_anglePct_now(_series) =>
+    now  = _series
+    prev = _series[1]
+    mt   = syminfo.mintick
+    na(now) or na(prev) or mt == 0.0 ? 0.0 :
+         (math.atan((now - prev) / mt) / (math.pi / 2)) * 100.0
+
+// Base label text (omit TF when slot uses chart TF)
+f_lblText(_tf, _type, _len, _showCoreLenType, _showTF) =>
+    string base = ""
+    if _showCoreLenType
+        base += str.tostring(_len) + _type
+    if _showTF and _tf != ""
+        base := base == "" ? _tf : base + " / " + _tf
+    base
+
+// Integer formatter for angle% (avoid "-0")
+f_intPctStr(_v) =>
+    v = nz(_v, 0.0)
+    r = math.round(v)
+    r == 0 ? "0" : str.tostring(r)
+
+// ── series (now also gated by master-row slot toggles)
+eff1 = (enableMAEMA and _maRow1 and en1)
+eff2 = (enableMAEMA and _maRow2 and en2)
+eff3 = (enableMAEMA and _maRow3 and en3)
+eff4 = (enableMAEMA and _maRow4 and en4)
+eff5 = (enableMAEMA and _maRow5 and en5)
+
+m1 = eff1 ? f_getConverted(tf1, close, len1, type1) : na
+m2 = eff2 ? f_getConverted(tf2, close, len2, type2) : na
+m3 = eff3 ? f_getConverted(tf3, close, len3, type3) : na
+m4 = eff4 ? f_getConverted(tf4, close, len4, type4) : na
+m5 = eff5 ? f_getConverted(tf5, close, len5, type5) : na
+
+ms1 = eff1 ? f_getConvertedDense(tf1, close, len1, type1) : na
+ms2 = eff2 ? f_getConvertedDense(tf2, close, len2, type2) : na
+ms3 = eff3 ? f_getConvertedDense(tf3, close, len3, type3) : na
+ms4 = eff4 ? f_getConvertedDense(tf4, close, len4, type4) : na
+ms5 = eff5 ? f_getConvertedDense(tf5, close, len5, type5) : na
+
+// ── angle% (no lookback)
+a1 = f_anglePct_now(ms1)
+a2 = f_anglePct_now(ms2)
+a3 = f_anglePct_now(ms3)
+a4 = f_anglePct_now(ms4)
+a5 = f_anglePct_now(ms5)
+
+// ── plots (now use per-slot Plot Style)
+plot(m1, title="MA/EMA 1", color=col1, linewidth=w1, style=f_plotStyle(sty1), editable=false)
+plot(m2, title="MA/EMA 2", color=col2, linewidth=w2, style=f_plotStyle(sty2), editable=false)
+plot(m3, title="MA/EMA 3", color=col3, linewidth=w3, style=f_plotStyle(sty3), editable=false)
+plot(m4, title="MA/EMA 4", color=col4, linewidth=w4, style=f_plotStyle(sty4), editable=false)
+plot(m5, title="MA/EMA 5", color=col5, linewidth=w5, style=f_plotStyle(sty5), editable=false)
+
+// ── labels
+var label maema1Label = na
+var label maema2Label = na
+var label maema3Label = na
+var label maema4Label = na
+var label maema5Label = na
+
+// Fixed percent suffix
+suffix = "%"
+
+// Core texts per slot
+core1 = f_lblText(tf1, type1, len1, lCore1, lTF1)
+core2 = f_lblText(tf2, type2, len2, lCore2, lTF2)
+core3 = f_lblText(tf3, type3, len3, lCore3, lTF3)
+core4 = f_lblText(tf4, type4, len4, lCore4, lTF4)
+core5 = f_lblText(tf5, type5, len5, lCore5, lTF5)
+
+// UPDATED: Only show "|" if there is base text (core or timeframe shown)
+f_slopeText(_anglePct, _showSlope, _unitsOn, _hasBase) =>
+    if not _showSlope
+        ""
+    else
+        (_hasBase ? " | " : "") + (_unitsOn ? "slope " : "") + f_intPctStr(_anglePct) + " " + suffix
+
+// Final texts
+s1txt = f_slopeText(a1, slp1, lUnit1, str.length(core1) > 0)
+s2txt = f_slopeText(a2, slp2, lUnit2, str.length(core2) > 0)
+s3txt = f_slopeText(a3, slp3, lUnit3, str.length(core3) > 0)
+s4txt = f_slopeText(a4, slp4, lUnit4, str.length(core4) > 0)
+s5txt = f_slopeText(a5, slp5, lUnit5, str.length(core5) > 0)
+
+txt1 = core1 + s1txt
+txt2 = core2 + s2txt
+txt3 = core3 + s3txt
+txt4 = core4 + s4txt
+txt5 = core5 + s5txt
+
+if enableMAEMA and barstate.islast
+    if not na(maema1Label)
+        label.delete(maema1Label)
+    if not na(maema2Label)
+        label.delete(maema2Label)
+    if not na(maema3Label)
+        label.delete(maema3Label)
+    if not na(maema4Label)
+        label.delete(maema4Label)
+    if not na(maema5Label)
+        label.delete(maema5Label)
+
+    if eff1 and lbl1 and not na(m1)
+        maema1Label := label.new(x=bar_index, y=m1, text=txt1, color=color.new(color.black, 100), textcolor=col1, style=label.style_label_left, textalign=text.align_left, yloc=yloc.price, size=f_lblSize(lSize1))
+    if eff2 and lbl2 and not na(m2)
+        maema2Label := label.new(x=bar_index, y=m2, text=txt2, color=color.new(color.black, 100), textcolor=col2, style=label.style_label_left, textalign=text.align_left, yloc=yloc.price, size=f_lblSize(lSize2))
+    if eff3 and lbl3 and not na(m3)
+        maema3Label := label.new(x=bar_index, y=m3, text=txt3, color=color.new(color.black, 100), textcolor=col3, style=label.style_label_left, textalign=text.align_left, yloc=yloc.price, size=f_lblSize(lSize3))
+    if eff4 and lbl4 and not na(m4)
+        maema4Label := label.new(x=bar_index, y=m4, text=txt4, color=color.new(color.black, 100), textcolor=col4, style=label.style_label_left, textalign=text.align_left, yloc=yloc.price, size=f_lblSize(lSize4))
+    if eff5 and lbl5 and not na(m5)
+        maema5Label := label.new(x=bar_index, y=m5, text=txt5, color=color.new(color.black, 100), textcolor=col5, style=label.style_label_left, textalign=text.align_left, yloc=yloc.price, size=f_lblSize(lSize5))
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VWAP + Bands
+// ─────────────────────────────────────────────────────────────────────────────
+enableVWAP    = input.bool(true,  "Enable VWAP",             group=groupTB, display = display.none)
+
+groupVWAP      = "------ VWAP Settings ------"
+hideonDWM      = input.bool(false, title="Hide VWAP on 1D or Above", group=groupVWAP, display=display.data_window)
+anchor         = input.string("Session", title="Anchor Period", options=["Session","Week","Month","Quarter","Year","Decade","Century","Earnings","Dividends","Splits"], group=groupVWAP, display = display.none)
+src            = input.source(hlc3, title="Source", group=groupVWAP, display=display.data_window)
+offset         = input.int(0, title="Offset", group=groupVWAP, minval=0, display=display.data_window)
+
+// NEW: global VWAP label size with its own helper
+vwapLabelSize  = input.string("tiny", "Label Size (VWAP & Bands)", options=["tiny","small","normal","large","huge"], group=groupVWAP, display=display.none)
+f_vwapLblSize(_s) =>
+    switch _s
+        "tiny"   => size.tiny
+        "small"  => size.small
+        "normal" => size.normal
+        "large"  => size.large
+        "huge"   => size.huge
+        => size.tiny
+
+// NEW: Angle/Trend inputs
+vwapSlopeLen   = input.int(9, "Angle Lookback (bars)", minval=2, group=groupVWAP, display=display.none)
+vwapTh         = input.int(5,  "Angle Trend Threshold (%)", minval=0, maxval=100, group=groupVWAP, display=display.none)
+colorByAngle   = input.bool(false, "Color VWAP by Trend", group=groupVWAP, display=display.none)
+
+// NEW: VWAP label feature toggles
+showVwapLabel       = input.bool(true,  "Show VWAP Label",         group=groupVWAP, display=display.none)
+showVwapLabelName   = input.bool(true,  "Label: Show Name",         group=groupVWAP, display=display.none)
+showVwapLabelPrice  = input.bool(true,  "Label: Show Price",        group=groupVWAP, display=display.none)
+showVwapAngle       = input.bool(true,  "Label: Show Angle%",       group=groupVWAP, display=display.none)
+showSlopeWord       = input.bool(false, "Label: Show 'slope' word", group=groupVWAP, display=display.none)
+
+// Bands UI
+BANDS_GROUP    = "Bands Settings"
+calcModeInput  = input.string("Standard Deviation", "Bands Calculation Mode", options=["Standard Deviation","Percentage"], group=BANDS_GROUP, display = display.none)
+showBand_1     = input.bool(false,  "Band #1",   group=BANDS_GROUP, inline="b1", display=display.data_window)
+bandMult_1     = input.float(1.0,   "×",         group=BANDS_GROUP, inline="b1", step=0.5, minval=0, display=display.data_window)
+showBand_2     = input.bool(false,  "Band #2",   group=BANDS_GROUP, inline="b2", display=display.data_window)
+bandMult_2     = input.float(2.0,   "×",         group=BANDS_GROUP, inline="b2", step=0.5, minval=0, display=display.data_window)
+showBand_3     = input.bool(false,  "Band #3",   group=BANDS_GROUP, inline="b3", display=display.data_window)
+bandMult_3     = input.float(3.0,   "×",         group=BANDS_GROUP, inline="b3", step=0.5, minval=0, display=display.data_window)
+
+showAllLabels  = input.bool(true,  "Show All Labels",       group=BANDS_GROUP)
+showBand1Label = input.bool(true,  "Show Band #1 Label",    group=BANDS_GROUP)
+showBand2Label = input.bool(true,  "Show Band #2 Label",    group=BANDS_GROUP)
+showBand3Label = input.bool(true,  "Show Band #3 Label",    group=BANDS_GROUP)
+// Band label content toggles
+showBandNames  = input.bool(true,  "Band Labels: Show Names",  group=BANDS_GROUP, display=display.none)
+showBandPrices = input.bool(true,  "Band Labels: Show Prices", group=BANDS_GROUP, display=display.none)
+
+// Color Settings (all adjustable)
+COLOR_GROUP           = "Color Settings"
+showFill              = input.bool(false,  "Show VWAP Highlight Fill", group=COLOR_GROUP)
+showBandFill          = input.bool(false, "Show Bands Fill",          group=COLOR_GROUP)
+vwapColor             = input.color(color.blue,   "VWAP Line Color (Neutral)", group=COLOR_GROUP)
+vwapUpColor           = input.color(color.lime,   "VWAP Uptrend Color",        group=COLOR_GROUP)
+vwapDownColor         = input.color(color.red,    "VWAP Downtrend Color",      group=COLOR_GROUP)
+// Hull-style look when colorByAngle = ON
+vwapNeutralWidth      = input.int(2, "VWAP Neutral Line Width", minval=1, maxval=8, group=COLOR_GROUP, display=display.none)
+vwapTrendWidth        = input.int(2, "VWAP Trend Line Width",   minval=1, maxval=10, group=COLOR_GROUP, display=display.none)
+vwapTrendAlpha        = input.int(10,"VWAP Trend Transparency (0–100)", minval=0, maxval=100, group=COLOR_GROUP, display=display.none)
+
+band1ColorUpper       = input.color(color.green,  "Band #1 Upper Color",       group=COLOR_GROUP)
+band1ColorLower       = input.color(color.red,    "Band #1 Lower Color",       group=COLOR_GROUP)
+band2ColorUpper       = input.color(color.green,  "Band #2 Upper Color",       group=COLOR_GROUP)
+band2ColorLower       = input.color(color.red,    "Band #2 Lower Color",       group=COLOR_GROUP)
+band3ColorUpper       = input.color(color.yellow, "Band #3 Upper Color",       group=COLOR_GROUP)
+band3ColorLower       = input.color(color.yellow, "Band #3 Lower Color",       group=COLOR_GROUP)
+highlightUpColor      = input.color(color.new(color.green,85), "VWAP Highlight Up",   group=COLOR_GROUP)
+highlightDownColor    = input.color(color.new(color.red,85),   "VWAP Highlight Down", group=COLOR_GROUP)
+
+// Data validation
+cumVol = ta.cum(volume)
+if enableVWAP and barstate.islast and cumVol == 0
+    runtime.error("No volume is provided by the data vendor.")
+
+// Anchors
+new_earnings  = request.earnings(syminfo.tickerid, earnings.actual,  barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+new_dividends = request.dividends(syminfo.tickerid, dividends.gross, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+new_splits    = request.splits(syminfo.tickerid, splits.denominator, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+
+isNewPeriod = switch anchor
+    "Earnings"  => not na(new_earnings)
+    "Dividends" => not na(new_dividends)
+    "Splits"    => not na(new_splits)
+    "Session"   => timeframe.change("D")
+    "Week"      => timeframe.change("W")
+    "Month"     => timeframe.change("M")
+    "Quarter"   => timeframe.change("3M")
+    "Year"      => timeframe.change("12M")
+    "Decade"    => timeframe.change("12M") and year % 10 == 0
+    "Century"   => timeframe.change("12M") and year % 100 == 0
+    => false
+
+isEsdAnchor = anchor == "Earnings" or anchor == "Dividends" or anchor == "Splits"
+if na(src[1]) and not isEsdAnchor
+    isNewPeriod := true
+
+// Compute VWAP & bands
+float _vwap = na
+float _u1   = na
+float _l1   = na
+float _u2   = na
+float _l2   = na
+float _u3   = na
+float _l3   = na
+
+if enableVWAP and not (hideonDWM and timeframe.isdwm)
+    [tmpV, tmpSt, _] = ta.vwap(src, isNewPeriod, 1)
+    _vwap := tmpV
+    stdevAbs = tmpSt - tmpV
+    basis    = calcModeInput == "Standard Deviation" ? stdevAbs : tmpV * 0.01
+    _u1 := tmpV + basis * bandMult_1
+    _l1 := tmpV - basis * bandMult_1
+    _u2 := tmpV + basis * bandMult_2
+    _l2 := tmpV - basis * bandMult_2
+    _u3 := tmpV + basis * bandMult_3
+    _l3 := tmpV - basis * bandMult_3
+
+// Hide series when disabled
+vwapSeries      = enableVWAP ? _vwap : na
+upper1Series    = enableVWAP and showBand_1 ? _u1 : na
+lower1Series    = enableVWAP and showBand_1 ? _l1 : na
+upper2Series    = enableVWAP and showBand_2 ? _u2 : na
+lower2Series    = enableVWAP and showBand_2 ? _l2 : na
+upper3Series    = enableVWAP and showBand_3 ? _u3 : na
+lower3Series    = enableVWAP and showBand_3 ? _l3 : na
+
+// ── Regression slope → Angle% (bounded, anchor-aware)
+bs = nz(ta.barssince(isNewPeriod), na)
+int effLb = na(bs) ? 0 : (bs >= 1 ? int(math.max(2, math.min(vwapSlopeLen, bs + 1))) : 0)
+
+// OLS slope helper
+f_lr_slope(_src, _len) =>
+    if _len < 2 or na(_src[_len - 1])
+        na
+    else
+        float sumX  = 0.0
+        float sumY  = 0.0
+        float sumXX = 0.0
+        float sumXY = 0.0
+        for i = 0 to _len - 1
+            xi = i + 1
+            yi = _src[_len - 1 - i]
+            sumX  := na(yi) ? na : sumX + xi
+            sumY  := na(yi) ? na : sumY + yi
+            sumXX := na(yi) ? na : sumXX + xi * xi
+            sumXY := na(yi) ? na : sumXY + xi * yi
+        na(sumX) or na(sumY) or na(sumXX) or na(sumXY) ? na : ( (_len * sumXY - sumX * sumY) ) / (_len * sumXX - sumX * sumX)
+
+// Call every bar for consistency
+lrSlope = f_lr_slope(vwapSeries, effLb)
+
+// Map slope to bounded Angle%
+mt = syminfo.mintick
+vwapAnglePct = na(mt) or mt == 0 or na(lrSlope) ? na : (math.atan((lrSlope / mt)) / (math.pi / 2)) * 100.0
+angleInt = math.round(nz(vwapAnglePct, 0))
+angleStr = angleInt == 0 ? "0" : str.tostring(angleInt)
+
+// Trend from Angle%
+vwapTrend = angleInt >  vwapTh ?  1 : angleInt < -vwapTh ? -1 : 0
+
+// Top-level VWAP & bands plots
+vwapBaseCol   = colorByAngle ? (vwapTrend > 0 ? vwapUpColor : vwapTrend < 0 ? vwapDownColor : vwapColor) : vwapColor
+vwapPlotColor = colorByAngle ? color.new(vwapBaseCol, vwapTrendAlpha) : vwapBaseCol
+vwapLineWidth = colorByAngle ? vwapTrendWidth : vwapNeutralWidth
+
+plot(vwapSeries,       title="VWAP",            color=vwapPlotColor, linewidth=vwapLineWidth, offset=offset)
+b1u = plot(upper1Series, title="Upper Band #1", color=band1ColorUpper,       offset=offset, display=showBand_1 ? display.all : display.none, editable=showBand_1)
+b1l = plot(lower1Series, title="Lower Band #1", color=band1ColorLower,       offset=offset, display=showBand_1 ? display.all : display.none, editable=showBand_1)
+fill(b1u, b1l, title="Bands Fill #1", color=color.new(band1ColorUpper,95), display=showBand_1 and showBandFill ? display.all : display.none)
+
+b2u = plot(upper2Series, title="Upper Band #2", color=band2ColorUpper,       offset=offset, display=showBand_2 ? display.all : display.none, editable=showBand_2)
+b2l = plot(lower2Series, title="Lower Band #2", color=band2ColorLower,       offset=offset, display=showBand_2 ? display.all : display.none, editable=showBand_2)
+fill(b2u, b2l, title="Bands Fill #2", color=color.new(band2ColorUpper,95), display=showBand_2 and showBandFill ? display.all : display.none)
+
+b3u = plot(upper3Series, title="Upper Band #3", color=band3ColorUpper,       offset=offset, display=showBand_3 ? display.all : display.none, editable=showBand_3)
+b3l = plot(lower3Series, title="Lower Band #3", color=band3ColorLower,       offset=offset, display=showBand_3 ? display.all : display.none, editable=showBand_3)
+fill(b3u, b3l, title="Bands Fill #3", color=color.new(band3ColorUpper,95), display=showBand_3 and showBandFill ? display.all : display.none)
+
+// VWAP highlight fill
+vwPlot   = plot(vwapSeries, display=display.none)
+upPlot   = plot(showFill and close > vwapSeries ? low  : na, title="Price Above VWAP", style=plot.style_line, display=display.none)
+downPlot = plot(showFill and close < vwapSeries ? high : na, title="Price Below VWAP", style=plot.style_line, display=display.none)
+fill(vwPlot, upPlot,   color=highlightUpColor,   title="VWAP Highlight Up",   display=showFill ? display.all : display.none)
+fill(vwPlot, downPlot, color=highlightDownColor, title="VWAP Highlight Down", display=showFill ? display.all : display.none)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VWAP Labels (de-duplicated)
+// ─────────────────────────────────────────────────────────────────────────────
+var label vwapMainLabel      = na
+var label vwapBand1UpLabel   = na
+var label vwapBand1DownLabel = na
+var label vwapBand2UpLabel   = na
+var label vwapBand2DownLabel = na
+var label vwapBand3UpLabel   = na
+var label vwapBand3DownLabel = na
+
+// Helper to assemble "Name / $Price" with toggles
+f_lblBase(_name, _price, _showName, _showPrice) =>
+    string t = ""
+    if _showName
+        t += _name
+    if _showPrice
+        p = "$" + str.tostring(_price, format.mintick)
+        t := t == "" ? p : t + " / " + p
+    t
+
+if enableVWAP and barstate.islast and showAllLabels
+    // Main VWAP
+    if showVwapLabel and not na(vwapSeries)
+        label.delete(vwapMainLabel)
+        baseTxt  = f_lblBase("VWAP", vwapSeries, showVwapLabelName, showVwapLabelPrice)
+        slopeTxt = showVwapAngle and not na(vwapAnglePct) ? ((str.length(baseTxt) > 0) ? " | " : "") + (showSlopeWord ? "slope " : "") + (angleStr + "%") : ""
+        vwapMainLabel := label.new( bar_index, vwapSeries, text=baseTxt + slopeTxt, color=color.new(color.black,100), textcolor=vwapPlotColor, style=label.style_label_left, textalign=text.align_left, yloc=yloc.price, size=f_vwapLblSize(vwapLabelSize))
+    // VWAP ±1
+    if showBand1Label and not na(upper1Series)
+        label.delete(vwapBand1UpLabel)
+        t1u = f_lblBase("VWAP+1", upper1Series, showBandNames, showBandPrices)
+        vwapBand1UpLabel := label.new( bar_index, upper1Series, text=t1u, color=color.new(color.black,100), textcolor=band1ColorUpper, style=label.style_label_left, textalign=text.align_left, yloc=yloc.price, size=f_vwapLblSize(vwapLabelSize))
+    if showBand1Label and not na(lower1Series)
+        label.delete(vwapBand1DownLabel)
+        t1d = f_lblBase("VWAP-1", lower1Series, showBandNames, showBandPrices)
+        vwapBand1DownLabel := label.new( bar_index, lower1Series, text=t1d, color=color.new(color.black,100), textcolor=band1ColorLower, style=label.style_label_left, yloc=yloc.price, textalign=text.align_left, size=f_vwapLblSize(vwapLabelSize))
+    // VWAP ±2
+    if showBand2Label and not na(upper2Series)
+        label.delete(vwapBand2UpLabel)
+        t2u = f_lblBase("VWAP+2", upper2Series, showBandNames, showBandPrices)
+        vwapBand2UpLabel := label.new( bar_index, upper2Series, text=t2u, color=color.new(color.black,100), textcolor=band2ColorUpper, style=label.style_label_left, textalign=text.align_left, yloc=yloc.price, size=f_vwapLblSize(vwapLabelSize))
+    if showBand2Label and not na(lower2Series)
+        label.delete(vwapBand2DownLabel)
+        t2d = f_lblBase("VWAP-2", lower2Series, showBandNames, showBandPrices)
+        vwapBand2DownLabel := label.new( bar_index, lower2Series, text=t2d, color=color.new(color.black,100), textcolor=band2ColorLower, style=label.style_label_left, textalign=text.align_left, yloc=yloc.price, size=f_vwapLblSize(vwapLabelSize))
+    // VWAP ±3
+    if showBand3Label and not na(upper3Series)
+        label.delete(vwapBand3UpLabel)
+        t3u = f_lblBase("VWAP+3", upper3Series, showBandNames, showBandPrices)
+        vwapBand3UpLabel := label.new( bar_index, upper3Series, text=t3u, color=color.new(color.black,100), textcolor=band3ColorUpper, style=label.style_label_left, textalign=text.align_left, yloc=yloc.price, size=f_vwapLblSize(vwapLabelSize))
+    if showBand3Label and not na(lower3Series)
+        label.delete(vwapBand3DownLabel)
+        t3d = f_lblBase("VWAP-3", lower3Series, showBandNames, showBandPrices)
+        vwapBand3DownLabel := label.new( bar_index, lower3Series, text=t3d, color=color.new(color.black,100), textcolor=band3ColorLower, style=label.style_label_left, textalign=text.align_left, yloc=yloc.price, size=f_vwapLblSize(vwapLabelSize))
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bollinger Bands (behind the `enableBB` master toggle)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enableBB      = input.bool(true,  "Enable Bollinger Bands",  group=groupTB, display = display.none)
+groupBB            = "------ Bollinger Band settings ------"
+showBBLabel        = input.bool(true,  "Show Center Line MA Label", group=groupBB, display=display.none)
+enableGradientFill = input.bool(false, "Enable Gradient Background Fill",group=groupBB, display=display.none)
+bbLength           = input.int(20,     "Bollinger Bands Length",        group=groupBB, display=display.none)
+bbMult             = input.float(2.0,  "Bollinger Bands Multiplier",    group=groupBB, display=display.none)
+bbBasisLineWidth   = input.int(2,      "Basis Line Width", minval=1, maxval=5, group=groupBB, display=display.none)
+bbExpandingColor   = input.color(color.rgb(0,255,8,40),   "BB Expanding Color",   group=groupBB, display=display.none)
+bbContractingColor = input.color(color.rgb(255,0,0,40),   "BB Contracting Color", group=groupBB, display=display.none)
+bbBasisColor       = input.color(color.new(color.orange,0),"BB Basis Color",       group=groupBB, display=display.none)
+bbFillUpColor      = input.color(color.new(color.green,80),"Gradient Fill Up Color",      group=groupBB, display=display.none)
+bbFillDownColor    = input.color(color.new(color.red,80),  "Gradient Fill Down Color",    group=groupBB, display=display.none)
+
+// Calculate Bollinger Bands
+basis      = ta.sma(close, bbLength)
+dev        = ta.stdev(close, bbLength) * bbMult
+upperBB    = basis + dev
+lowerBB    = basis - dev
+bbWidthChg = (upperBB - lowerBB) - (upperBB[1] - lowerBB[1])
+bbColor    = bbWidthChg > 0 ? bbExpandingColor : bbContractingColor
+
+// Series hidden when disabled
+upperSeries = enableBB ? upperBB : na
+lowerSeries = enableBB ? lowerBB : na
+basisSeries = enableBB ? basis   : na
+
+// Top-level plots
+uPlot = plot(upperSeries, title="Upper BB", color=bbColor, linewidth=2, editable=false)
+lPlot = plot(lowerSeries, title="Lower BB", color=bbColor, linewidth=2, editable=false)
+bPlot = plot(basisSeries, title="BB Basis",  color=bbBasisColor, linewidth=bbBasisLineWidth,
+             style=plot.style_line, trackprice=false, editable=false)
+
+// Center-line label (only last bar)
+var label bbCenterLabel = na
+
+if enableBB and showBBLabel and not na(basisSeries) and barstate.islast
+    label.delete(bbCenterLabel)
+    bbCenterLabel := label.new(bar_index, basisSeries, text=str.tostring(bbLength) + "ma", color=color.new(color.black,100), textcolor=bbBasisColor, style=label.style_label_left, textalign=text.align_left, yloc=yloc.price, size=size.normal)
+
+
+// Gradient background fill (optional)
+// Create a reference close series that is na when either BB or gradient is off
+gradSeries = enableBB and enableGradientFill ? close : na
+
+// Invisible plot for the fill reference
+gradPlot = plot(gradSeries, title="Close for Gradient Fill", display=display.none)
+
+// Top-level fills — they only draw when gradSeries and BB series are non-na
+fill(gradPlot, uPlot, title="Gradient Fill Above", color=bbFillDownColor, editable=false)
+fill(lPlot,   gradPlot, title="Gradient Fill Below", color=bbFillUpColor, editable=false)
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// //////Dix$ons ATC
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+
+// === FUNCTIONS ===
+confidence(r) =>
+    switch
+        r < 0.2 => "Extremely Weak"
+        r < 0.3 => "Very Weak"
+        r < 0.4 => "Weak"
+        r < 0.5 => "Mostly Weak"
+        r < 0.6 => "Somewhat Weak"
+        r < 0.7 => "Moderately Weak"
+        r < 0.8 => "Moderate"
+        r < 0.9 => "Moderately Strong"
+        r < 0.92 => "Mostly Strong"
+        r < 0.94 => "Strong"
+        r < 0.96 => "Very Strong"
+        r < 0.98 => "Exceptionally Strong"
+        => "Ultra Strong"
+
+getTablePosition(pos) =>
+    switch pos
+        "Bottom Right" => position.bottom_right
+        "Bottom Center" => position.bottom_center
+        "Bottom Left" => position.bottom_left
+        "Top Right" => position.top_right
+        "Top Left" => position.top_left
+        "Top Center" => position.top_center
+        "Middle Right" => position.middle_right
+        => position.middle_left
+
+
+
+calcDev(src, len) =>
+    float logSrc = math.log(src)
+    var int period_1 = len - 1
+    if barstate.islast
+        float sumX = 0.0, sumXX = 0.0, sumYX = 0.0, sumY = 0.0
+        for i = 1 to len
+            float lSrc = logSrc[i - 1]
+            sumX += i
+            sumXX += i * i
+            sumYX += i * lSrc
+            sumY += lSrc
+        float slope = nz((len * sumYX - sumX * sumY) / (len * sumXX - sumX * sumX))
+        float avg = sumY / len
+        float intercept = avg - slope * sumX / len + slope
+        float sumDev = 0.0, sumDxx = 0.0, sumDyy = 0.0, sumDyx = 0.0
+        float regres = intercept + slope * period_1 * 0.5
+        float sumSlp = intercept
+        for i = 0 to period_1
+            float lSrc = logSrc[i]
+            float dxt = lSrc - avg
+            float dyt = sumSlp - regres
+            lSrc := lSrc - sumSlp
+            sumSlp += slope
+            sumDxx += dxt * dxt
+            sumDyy += dyt * dyt
+            sumDyx += dxt * dyt
+            sumDev += lSrc * lSrc
+        float stdDev = math.sqrt(sumDev / period_1)
+        float divisor = sumDxx * sumDyy
+        float r = nz(sumDyx / math.sqrt(divisor))
+        [stdDev, r, slope, intercept]
+    else
+        [na, na, na, na]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// //////Dix$ons ATC Inputs (Full Inputs for Short & Long Term Channels)
+// ─────────────────────────────────────────────────────────────────────────────
+
+groupATC  = "------ Dix$on ATC Settings ------"
+groupSTC  = "Short-Term Channel Settings"
+groupLTC  = "Long-Term Channel Settings"
+groupSTM  = "Short-Term Midline Settings"
+groupLTM  = "Long-Term Midline Settings"
+groupFILL = "Channel Trend Background Fill Settings"
+groupTBLST = "Short-Term Table Settings"
+groupTBLLT = "Long-Term Table Settings"
+
+// === MASTER TOGGLE ===
+enableAdaptiveTrendChannel = input.bool(true, "Enable Adaptive Trend Channel", tooltip="Master toggle to enable/disable Adaptive Trend Channels.", group=groupTB, display=display.none)
+
+// === SOURCE ===
+sourceInput = input.source(close, "Source", group=groupATC, display=display.none)
+
+
+// === SHORT-TERM CHANNEL ===
+enableShortTermChannel = input.bool(true, "Show Short-Term Channel", group=groupSTC, display=display.none)
+devMultiplierST        = input.float(2.0, "Deviation Multiplier (Short-Term)", step=0.1, group=groupSTC, display=display.none)
+upperColorST           = input.color(color.rgb(97, 97, 97), "Upper Channel Color", group=groupSTC, display=display.none)
+lowerColorST           = input.color(color.rgb(97, 97, 97), "Lower Channel Color", group=groupSTC, display=display.none)
+channelWidthST         = input.int(1, "Channel Line Width", minval=1, maxval=5, group=groupSTC, display=display.none)
+channelStyleST         = input.string("Solid", "Channel Line Style", options=["Solid", "Dotted", "Dashed"], group=groupSTC, display=display.none)
+channelTranspST        = input.int(0, "Channel Line Transparency", minval=0, maxval=100, group=groupSTC, display=display.none)
+extendStyleST          = input.string("Extend Right", "Line Extension Style", options=["Extend Right", "Extend Both", "Extend None", "Extend Left"], group=groupSTC, display=display.none)
+
+// === SHORT-TERM MIDLINE ===
+showMidlineST          = input.bool(false, "Show Short-Term Midline", group=groupSTM, display=display.none)
+midlineColorST         = input.color(color.blue, "Midline Color", group=groupSTM, display=display.none)
+midlineStyleST         = input.string("Dashed", "Midline Style", options=["Solid", "Dotted", "Dashed"], group=groupSTM, display=display.none)
+midlineWidthST         = input.int(1, "Midline Width", minval=1, maxval=5, group=groupSTM, display=display.none)
+midlineTranspST        = input.int(0, "Midline Transparency", minval=0, maxval=100, group=groupSTM, display=display.none)
+
+// === LONG-TERM CHANNEL ===
+enableLongTermChannel  = input.bool(true, "Show Long-Term Channel", group=groupLTC, display=display.none)
+devMultiplierLT        = input.float(2.0, "Deviation Multiplier (Long-Term)", step=0.1, group=groupLTC, display=display.none)
+upperColorLT           = input.color(color.rgb(255, 0, 0), "Upper Channel Color", group=groupLTC, display=display.none)
+lowerColorLT           = input.color(color.rgb(9, 255, 0), "Lower Channel Color", group=groupLTC, display=display.none)
+channelWidthLT         = input.int(2, "Channel Line Width", minval=1, maxval=5, group=groupLTC, display=display.none)
+channelStyleLT         = input.string("Solid", "Channel Line Style", options=["Solid", "Dotted", "Dashed"], group=groupLTC, display=display.none)
+channelTranspLT        = input.int(0, "Channel Line Transparency", minval=0, maxval=100, group=groupLTC, display=display.none)
+extendStyleLT          = input.string("Extend Both", "Line Extension Style", options=["Extend Right", "Extend Both", "Extend None", "Extend Left"], group=groupLTC, display=display.none)
+
+// === LONG-TERM MIDLINE ===
+showMidlineLT          = input.bool(false, "Show Long-Term Midline", group=groupLTM, display=display.none)
+midlineColorLT         = input.color(color.blue, "Midline Color", group=groupLTM, display=display.none)
+midlineStyleLT         = input.string("Dashed", "Midline Style", options=["Solid", "Dotted", "Dashed"], group=groupLTM, display=display.none)
+midlineWidthLT         = input.int(1, "Midline Width", minval=1, maxval=5, group=groupLTM, display=display.none)
+midlineTranspLT        = input.int(0, "Midline Transparency", minval=0, maxval=100, group=groupLTM, display=display.none)
+
+// === BACKGROUND FILL ===
+enableBackgroundFillST = input.bool(false, "Enable ST Background Fill", group=groupFILL)
+backgroundUpColorST    = input.color(color.new(#5a5a5a, 85), "ST Uptrend Fill", group=groupFILL, display=display.none)
+backgroundDownColorST  = input.color(color.new(#5a5a5a, 85), "ST Downtrend Fill", group=groupFILL, display=display.none)
+
+enableBackgroundFillLT = input.bool(false, "Enable LT Background Fill", group=groupFILL, display=display.none)
+backgroundUpColorLT    = input.color(color.new(color.green, 85), "LT Uptrend Fill", group=groupFILL, display=display.none)
+backgroundDownColorLT  = input.color(color.new(color.red, 85), "LT Downtrend Fill", group=groupFILL, display=display.none)
+
+// === SHORT-TERM TABLE SETTINGS ===
+showPeriodST      = input.bool(true, "Show Detected Period", group=groupTBLST, display=display.none)
+showStrengthST    = input.bool(true, "Show Trend Strength", group=groupTBLST, display=display.none)
+showPearsonST     = input.bool(false, "Show Pearson R", group=groupTBLST, display=display.none)
+showCAGRST        = input.bool(true, "Show Annualized Return", group=groupTBLST, display=display.none)
+tablePosST        = input.string("Bottom Right", "Table Position", options=["Bottom Right", "Bottom Left", "Middle Right", "Middle Left", "Top Right", "Top Left", "Top Center", "Bottom Center"], group=groupTBLST, display=display.none)
+tableSizeST       = input.string("Normal", "Text Size", options=["Normal", "Large", "Small"], group=groupTBLST, display=display.none)
+
+// === LONG-TERM TABLE SETTINGS ===
+showPeriodLT      = input.bool(true, "Show Detected Period", group=groupTBLLT, display=display.none)
+showStrengthLT    = input.bool(true, "Show Trend Strength", group=groupTBLLT, display=display.none)
+showPearsonLT     = input.bool(false, "Show Pearson R", group=groupTBLLT, display=display.none)
+showCAGRLT        = input.bool(true, "Show Annualized Return", group=groupTBLLT, display=display.none)
+tablePosLT        = input.string("Top Right", "Table Position", options=["Bottom Right", "Bottom Left", "Middle Right", "Middle Left", "Top Right", "Top Left", "Top Center", "Bottom Center"], group=groupTBLLT, display=display.none)
+tableSizeLT       = input.string("Normal", "Text Size", options=["Normal", "Large", "Small"], group=groupTBLLT, display=display.none)
+
+// === SETTINGS ===
+
+
+isValidTF() => timeframe.isdaily or timeframe.isweekly
+getMult() => timeframe.isdaily ? 252 : timeframe.isweekly ? 52 : 1
+
+// === PERIODS ===
+
+// Short-Term Periods: 20–200
+PeriodsST = array.from(na, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200)
+
+// Long-Term Periods: 300–1200
+PeriodsLT = array.from(na, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200)
+
+
+[stdST01, rST01, slpST01, intST01] = calcDev(sourceInput, PeriodsST.get(1))
+[stdST02, rST02, slpST02, intST02] = calcDev(sourceInput, PeriodsST.get(2))
+[stdST03, rST03, slpST03, intST03] = calcDev(sourceInput, PeriodsST.get(3))
+[stdST04, rST04, slpST04, intST04] = calcDev(sourceInput, PeriodsST.get(4))
+[stdST05, rST05, slpST05, intST05] = calcDev(sourceInput, PeriodsST.get(5))
+[stdST06, rST06, slpST06, intST06] = calcDev(sourceInput, PeriodsST.get(6))
+[stdST07, rST07, slpST07, intST07] = calcDev(sourceInput, PeriodsST.get(7))
+[stdST08, rST08, slpST08, intST08] = calcDev(sourceInput, PeriodsST.get(8))
+[stdST09, rST09, slpST09, intST09] = calcDev(sourceInput, PeriodsST.get(9))
+[stdST10, rST10, slpST10, intST10] = calcDev(sourceInput, PeriodsST.get(10))
+[stdST11, rST11, slpST11, intST11] = calcDev(sourceInput, PeriodsST.get(11))
+[stdST12, rST12, slpST12, intST12] = calcDev(sourceInput, PeriodsST.get(12))
+[stdST13, rST13, slpST13, intST13] = calcDev(sourceInput, PeriodsST.get(13))
+[stdST14, rST14, slpST14, intST14] = calcDev(sourceInput, PeriodsST.get(14))
+[stdST15, rST15, slpST15, intST15] = calcDev(sourceInput, PeriodsST.get(15))
+[stdST16, rST16, slpST16, intST16] = calcDev(sourceInput, PeriodsST.get(16))
+[stdST17, rST17, slpST17, intST17] = calcDev(sourceInput, PeriodsST.get(17))
+[stdST18, rST18, slpST18, intST18] = calcDev(sourceInput, PeriodsST.get(18))
+[stdST19, rST19, slpST19, intST19] = calcDev(sourceInput, PeriodsST.get(19))
+
+[stdLT01, rLT01, slpLT01, intLT01] = calcDev(sourceInput, PeriodsLT.get(1))
+[stdLT02, rLT02, slpLT02, intLT02] = calcDev(sourceInput, PeriodsLT.get(2))
+[stdLT03, rLT03, slpLT03, intLT03] = calcDev(sourceInput, PeriodsLT.get(3))
+[stdLT04, rLT04, slpLT04, intLT04] = calcDev(sourceInput, PeriodsLT.get(4))
+[stdLT05, rLT05, slpLT05, intLT05] = calcDev(sourceInput, PeriodsLT.get(5))
+[stdLT06, rLT06, slpLT06, intLT06] = calcDev(sourceInput, PeriodsLT.get(6))
+[stdLT07, rLT07, slpLT07, intLT07] = calcDev(sourceInput, PeriodsLT.get(7))
+[stdLT08, rLT08, slpLT08, intLT08] = calcDev(sourceInput, PeriodsLT.get(8))
+[stdLT09, rLT09, slpLT09, intLT09] = calcDev(sourceInput, PeriodsLT.get(9))
+[stdLT10, rLT10, slpLT10, intLT10] = calcDev(sourceInput, PeriodsLT.get(10))
+[stdLT11, rLT11, slpLT11, intLT11] = calcDev(sourceInput, PeriodsLT.get(11))
+[stdLT12, rLT12, slpLT12, intLT12] = calcDev(sourceInput, PeriodsLT.get(12))
+[stdLT13, rLT13, slpLT13, intLT13] = calcDev(sourceInput, PeriodsLT.get(13))
+[stdLT14, rLT14, slpLT14, intLT14] = calcDev(sourceInput, PeriodsLT.get(14))
+[stdLT15, rLT15, slpLT15, intLT15] = calcDev(sourceInput, PeriodsLT.get(15))
+[stdLT16, rLT16, slpLT16, intLT16] = calcDev(sourceInput, PeriodsLT.get(16))
+[stdLT17, rLT17, slpLT17, intLT17] = calcDev(sourceInput, PeriodsLT.get(17))
+[stdLT18, rLT18, slpLT18, intLT18] = calcDev(sourceInput, PeriodsLT.get(18))
+[stdLT19, rLT19, slpLT19, intLT19] = calcDev(sourceInput, PeriodsLT.get(19))
+
+
+highestRST = math.max(rST01, rST02, rST03, rST04, rST05, rST06, rST07, rST08, rST09, rST10,
+                      rST11, rST12, rST13, rST14, rST15, rST16, rST17, rST18, rST19)
+
+var float detPST = na
+var float detSST = na
+var float detIST = na
+var float detDST = na
+
+switch highestRST
+    rST01 =>
+        detPST := PeriodsST.get(1)
+        detSST := slpST01
+        detIST := intST01
+        detDST := stdST01
+    rST02 =>
+        detPST := PeriodsST.get(2)
+        detSST := slpST02
+        detIST := intST02
+        detDST := stdST02
+    rST03 =>
+        detPST := PeriodsST.get(3)
+        detSST := slpST03
+        detIST := intST03
+        detDST := stdST03
+    rST04 =>
+        detPST := PeriodsST.get(4)
+        detSST := slpST04
+        detIST := intST04
+        detDST := stdST04
+    rST05 =>
+        detPST := PeriodsST.get(5)
+        detSST := slpST05
+        detIST := intST05
+        detDST := stdST05
+    rST06 =>
+        detPST := PeriodsST.get(6)
+        detSST := slpST06
+        detIST := intST06
+        detDST := stdST06
+    rST07 =>
+        detPST := PeriodsST.get(7)
+        detSST := slpST07
+        detIST := intST07
+        detDST := stdST07
+    rST08 =>
+        detPST := PeriodsST.get(8)
+        detSST := slpST08
+        detIST := intST08
+        detDST := stdST08
+    rST09 =>
+        detPST := PeriodsST.get(9)
+        detSST := slpST09
+        detIST := intST09
+        detDST := stdST09
+    rST10 =>
+        detPST := PeriodsST.get(10)
+        detSST := slpST10
+        detIST := intST10
+        detDST := stdST10
+    rST11 =>
+        detPST := PeriodsST.get(11)
+        detSST := slpST11
+        detIST := intST11
+        detDST := stdST11
+    rST12 =>
+        detPST := PeriodsST.get(12)
+        detSST := slpST12
+        detIST := intST12
+        detDST := stdST12
+    rST13 =>
+        detPST := PeriodsST.get(13)
+        detSST := slpST13
+        detIST := intST13
+        detDST := stdST13
+    rST14 =>
+        detPST := PeriodsST.get(14)
+        detSST := slpST14
+        detIST := intST14
+        detDST := stdST14
+    rST15 =>
+        detPST := PeriodsST.get(15)
+        detSST := slpST15
+        detIST := intST15
+        detDST := stdST15
+    rST16 =>
+        detPST := PeriodsST.get(16)
+        detSST := slpST16
+        detIST := intST16
+        detDST := stdST16
+    rST17 =>
+        detPST := PeriodsST.get(17)
+        detSST := slpST17
+        detIST := intST17
+        detDST := stdST17
+    rST18 =>
+        detPST := PeriodsST.get(18)
+        detSST := slpST18
+        detIST := intST18
+        detDST := stdST18
+    =>
+        detPST := PeriodsST.get(19)
+        detSST := slpST19
+        detIST := intST19
+        detDST := stdST19
+
+highestRLT = math.max(rLT01, rLT02, rLT03, rLT04, rLT05, rLT06, rLT07, rLT08, rLT09, rLT10,
+                      rLT11, rLT12, rLT13, rLT14, rLT15, rLT16, rLT17, rLT18, rLT19)
+
+var float detPLT = na
+var float detSLT = na
+var float detILT = na
+var float detDLT = na
+
+switch highestRLT
+    rLT01 =>
+        detPLT := PeriodsLT.get(1)
+        detSLT := slpLT01
+        detILT := intLT01
+        detDLT := stdLT01
+    rLT02 =>
+        detPLT := PeriodsLT.get(2)
+        detSLT := slpLT02
+        detILT := intLT02
+        detDLT := stdLT02
+    rLT03 =>
+        detPLT := PeriodsLT.get(3)
+        detSLT := slpLT03
+        detILT := intLT03
+        detDLT := stdLT03
+    rLT04 =>
+        detPLT := PeriodsLT.get(4)
+        detSLT := slpLT04
+        detILT := intLT04
+        detDLT := stdLT04
+    rLT05 =>
+        detPLT := PeriodsLT.get(5)
+        detSLT := slpLT05
+        detILT := intLT05
+        detDLT := stdLT05
+    rLT06 =>
+        detPLT := PeriodsLT.get(6)
+        detSLT := slpLT06
+        detILT := intLT06
+        detDLT := stdLT06
+    rLT07 =>
+        detPLT := PeriodsLT.get(7)
+        detSLT := slpLT07
+        detILT := intLT07
+        detDLT := stdLT07
+    rLT08 =>
+        detPLT := PeriodsLT.get(8)
+        detSLT := slpLT08
+        detILT := intLT08
+        detDLT := stdLT08
+    rLT09 =>
+        detPLT := PeriodsLT.get(9)
+        detSLT := slpLT09
+        detILT := intLT09
+        detDLT := stdLT09
+    rLT10 =>
+        detPLT := PeriodsLT.get(10)
+        detSLT := slpLT10
+        detILT := intLT10
+        detDLT := stdLT10
+    rLT11 =>
+        detPLT := PeriodsLT.get(11)
+        detSLT := slpLT11
+        detILT := intLT11
+        detDLT := stdLT11
+    rLT12 =>
+        detPLT := PeriodsLT.get(12)
+        detSLT := slpLT12
+        detILT := intLT12
+        detDLT := stdLT12
+    rLT13 =>
+        detPLT := PeriodsLT.get(13)
+        detSLT := slpLT13
+        detILT := intLT13
+        detDLT := stdLT13
+    rLT14 =>
+        detPLT := PeriodsLT.get(14)
+        detSLT := slpLT14
+        detILT := intLT14
+        detDLT := stdLT14
+    rLT15 =>
+        detPLT := PeriodsLT.get(15)
+        detSLT := slpLT15
+        detILT := intLT15
+        detDLT := stdLT15
+    rLT16 =>
+        detPLT := PeriodsLT.get(16)
+        detSLT := slpLT16
+        detILT := intLT16
+        detDLT := stdLT16
+    rLT17 =>
+        detPLT := PeriodsLT.get(17)
+        detSLT := slpLT17
+        detILT := intLT17
+        detDLT := stdLT17
+    rLT18 =>
+        detPLT := PeriodsLT.get(18)
+        detSLT := slpLT18
+        detILT := intLT18
+        detDLT := stdLT18
+    =>
+        detPLT := PeriodsLT.get(19)
+        detSLT := slpLT19
+        detILT := intLT19
+        detDLT := stdLT19
+
+
+
+if enableAdaptiveTrendChannel
+    // ──────────────────────────────────────────────────────
+    // SHORT-TERM CHANNEL
+    // ──────────────────────────────────────────────────────
+    if enableShortTermChannel
+        float startYST = math.exp(detIST + detSST * (detPST - 1))
+        float endYST   = math.exp(detIST)
+        int startBarST = bar_index - int(detPST) + 1
+
+        float ulST = startYST * math.exp(devMultiplierST * detDST)
+        float urST = endYST   * math.exp(devMultiplierST * detDST)
+        float llST = startYST / math.exp(devMultiplierST * detDST)
+        float lrST = endYST   / math.exp(devMultiplierST * detDST)
+
+        var line midLineST = na
+        var line upperLineST = na
+        var line lowerLineST = na
+        var linefill bgFillST = na
+
+        extendST = switch extendStyleST
+            "Extend Right" => extend.right
+            "Extend Left" => extend.left
+            "Extend Both" => extend.both
+            => extend.none
+
+        // Midline
+        if showMidlineST
+            if na(midLineST)
+                midLineST := line.new(startBarST, startYST, bar_index, endYST, color=color.new(midlineColorST, midlineTranspST), width=midlineWidthST, extend=extendST, style=midlineStyleST == "Dashed" ? line.style_dashed : midlineStyleST == "Dotted" ? line.style_dotted : line.style_solid)
+            else
+                line.set_xy1(midLineST, startBarST, startYST)
+                line.set_xy2(midLineST, bar_index, endYST)
+
+        // Upper/Lower Lines
+        if na(upperLineST)
+            upperLineST := line.new(startBarST, ulST, bar_index, urST, color=color.new(upperColorST, channelTranspST), width=channelWidthST, extend=extendST, style=channelStyleST == "Dashed" ? line.style_dashed : channelStyleST == "Dotted" ? line.style_dotted : line.style_solid)
+        else
+            line.set_xy1(upperLineST, startBarST, ulST)
+            line.set_xy2(upperLineST, bar_index, urST)
+
+        if na(lowerLineST)
+            lowerLineST := line.new(startBarST, llST, bar_index, lrST, color=color.new(lowerColorST, channelTranspST), width=channelWidthST, extend=extendST, style=channelStyleST == "Dashed" ? line.style_dashed : channelStyleST == "Dotted" ? line.style_dotted : line.style_solid)
+        else
+            line.set_xy1(lowerLineST, startBarST, llST)
+            line.set_xy2(lowerLineST, bar_index, lrST)
+
+        // Background Fill
+        trendUpST = detSST < 0
+        fillColorST = trendUpST ? backgroundUpColorST : backgroundDownColorST
+
+        if enableBackgroundFillST
+            if not na(bgFillST)
+                linefill.delete(bgFillST)
+            bgFillST := linefill.new(upperLineST, lowerLineST, color=fillColorST)
+
+        // Table
+        if showPeriodST or showStrengthST or showCAGRST
+            var table tST = table.new(getTablePosition(tablePosST), 2, 3)
+            if showPeriodST
+                table.cell(tST, 0, 0, "Period: " + str.tostring(detPST), text_size=tableSizeST == "Large" ? size.large : tableSizeST == "Small" ? size.small : size.normal)
+            if showStrengthST
+                txtST = showPearsonST ? "Pearson R: " + str.tostring(detSST > 0 ? -highestRST : highestRST, "#.###") : "Strength: " + confidence(highestRST)
+                table.cell(tST, 0, 1, txtST, text_size=tableSizeST == "Large" ? size.large : tableSizeST == "Small" ? size.small : size.normal)
+            if showCAGRST and isValidTF()
+                retST = math.pow(close / close[detPST - 1], getMult() / detPST) - 1
+                table.cell(tST, 0, 2, "Annual Return: " + str.tostring(retST * 100, "#.#") + "%", text_size=tableSizeST == "Large" ? size.large : tableSizeST == "Small" ? size.small : size.normal)
+
+    // ──────────────────────────────────────────────────────
+    // LONG-TERM CHANNEL
+    // ──────────────────────────────────────────────────────
+    if enableLongTermChannel
+        float startYLT = math.exp(detILT + detSLT * (detPLT - 1))
+        float endYLT   = math.exp(detILT)
+        int startBarLT = bar_index - int(detPLT) + 1
+
+        float ulLT = startYLT * math.exp(devMultiplierLT * detDLT)
+        float urLT = endYLT   * math.exp(devMultiplierLT * detDLT)
+        float llLT = startYLT / math.exp(devMultiplierLT * detDLT)
+        float lrLT = endYLT   / math.exp(devMultiplierLT * detDLT)
+
+        var line midLineLT = na
+        var line upperLineLT = na
+        var line lowerLineLT = na
+        var linefill bgFillLT = na
+
+        extendLT = switch extendStyleLT
+            "Extend Right" => extend.right
+            "Extend Left" => extend.left
+            "Extend Both" => extend.both
+            => extend.none
+
+        // Midline
+        if showMidlineLT
+            if na(midLineLT)
+                midLineLT := line.new(startBarLT, startYLT, bar_index, endYLT, color=color.new(midlineColorLT, midlineTranspLT), width=midlineWidthLT, extend=extendLT, style=midlineStyleLT == "Dashed" ? line.style_dashed : midlineStyleLT == "Dotted" ? line.style_dotted : line.style_solid)
+            else
+                line.set_xy1(midLineLT, startBarLT, startYLT)
+                line.set_xy2(midLineLT, bar_index, endYLT)
+
+        // Upper/Lower Lines
+        if na(upperLineLT)
+            upperLineLT := line.new(startBarLT, ulLT, bar_index, urLT, color=color.new(upperColorLT, channelTranspLT), width=channelWidthLT, extend=extendLT, style=channelStyleLT == "Dashed" ? line.style_dashed : channelStyleLT == "Dotted" ? line.style_dotted : line.style_solid)
+        else
+            line.set_xy1(upperLineLT, startBarLT, ulLT)
+            line.set_xy2(upperLineLT, bar_index, urLT)
+
+        if na(lowerLineLT)
+            lowerLineLT := line.new(startBarLT, llLT, bar_index, lrLT, color=color.new(lowerColorLT, channelTranspLT), width=channelWidthLT, extend=extendLT, style=channelStyleLT == "Dashed" ? line.style_dashed : channelStyleLT == "Dotted" ? line.style_dotted : line.style_solid)
+        else
+            line.set_xy1(lowerLineLT, startBarLT, llLT)
+            line.set_xy2(lowerLineLT, bar_index, lrLT)
+
+        // Background Fill
+        trendUpLT = detSLT < 0
+        fillColorLT = trendUpLT ? backgroundUpColorLT : backgroundDownColorLT
+
+        if enableBackgroundFillLT
+            if not na(bgFillLT)
+                linefill.delete(bgFillLT)
+            bgFillLT := linefill.new(upperLineLT, lowerLineLT, color=fillColorLT)
+
+        // Table
+        if showPeriodLT or showStrengthLT or showCAGRLT
+            var table tLT = table.new(getTablePosition(tablePosLT), 2, 3)
+            if showPeriodLT
+                table.cell(tLT, 0, 0, "Period: " + str.tostring(detPLT), text_size=tableSizeLT == "Large" ? size.large : tableSizeLT == "Small" ? size.small : size.normal)
+            if showStrengthLT
+                txtLT = showPearsonLT ? "Pearson R: " + str.tostring(detSLT > 0 ? -highestRLT : highestRLT, "#.###") : "Strength: " + confidence(highestRLT)
+                table.cell(tLT, 0, 1, txtLT, text_size=tableSizeLT == "Large" ? size.large : tableSizeLT == "Small" ? size.small : size.normal)
+            if showCAGRLT and isValidTF()
+                retLT = math.pow(close / close[detPLT - 1], getMult() / detPLT) - 1
+                table.cell(tLT, 0, 2, "Annual Return: " + str.tostring(retLT * 100, "#.#") + "%", text_size=tableSizeLT == "Large" ? size.large : tableSizeLT == "Small" ? size.small : size.normal)
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dix$ons Auto Fibonacci — ATR & Lookback
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GLOBAL
+// ─────────────────────────────────────────────────────────────────────────────
+enableAutoFib = input.bool(false, "Enable Auto Fibonacci", group=groupTB, display=display.none, tooltip="Master on/off for all automatic Fibonacci features.")
+groupF_GLOBAL = "------ Dix$on Auto Fibonacci ------"
+useLog        = input.bool(true,  "Logarithmic Scale", group=groupF_GLOBAL, display=display.none, tooltip="Interpolate levels on a logarithmic scale (better when ranges span large percentages).")
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ATR (Station) — stepped rails that hug near price (no-touch via ×ATR only)
+// ─────────────────────────────────────────────────────────────────────────────
+groupF_STA     = "ATR Auto Fib"
+enableFib_STA  = input.bool(true,  "Enable ATR Fib", group=groupF_STA, display=display.none, tooltip="Draw the ATR-based auto Fibonacci ")
+sta_atrLen     = input.int(5,      "ATR Period",     minval=1, group=groupF_STA, display=display.none, tooltip="Length for ATR used to compute the proximity gap and Supertrend.")
+sta_atrMult    = input.float(2.8,  "ATR Multiplier", step=0.1, group=groupF_STA, display=display.none, tooltip="Factor for TradingView’s built-in Supertrend (first argument).")
+sta_curOffset  = input.int(5,      "Current Offset", minval=-500, maxval=500, group=groupF_STA, display=display.none, tooltip="Bars to the right/left to anchor the CURRENT ATR fib rays.")
+sta_rayLen     = input.int(6,      "Ray Length",     minval=1, maxval=500, group=groupF_STA, display=display.none, tooltip="Length of the CURRENT ATR fib rays (in bars).")
+sta_showText   = input.bool(true,  "Show Level Text", group=groupF_STA, display=display.none, tooltip="Show ratio text on CURRENT ATR fib labels.")
+sta_showPrice  = input.bool(true,  "Show Price",      group=groupF_STA, display=display.none, tooltip="Append price to CURRENT ATR fib labels.")
+sta_pct        = input.bool(false, "Display % not ratio", group=groupF_STA, display=display.none, tooltip="Format the ratio text as a percent instead of a 0–1/1+ value.")
+// Visuals
+sta_plotHL     = input.bool(false, "Plot Hi/Low Anchor Lines", group=groupF_STA, display=display.none, tooltip="Plot the ATR rail anchors (upper/lower) as guide lines.")
+sta_plotATR    = input.bool(false, "Plot ATR Trailing Stop",   group=groupF_STA, display=display.none, tooltip="Plot the built-in Supertrend value (clamped between rails) as a continuous line.")
+
+// No-touch tuning (CUSHION REMOVED; proximity only)
+sta_proxATR    = input.float(0.0, "Proximity (×ATR)", step=0.05, minval=0.0, group=groupF_STA, display=display.none, tooltip="Gap from candle wicks to ATR rails expressed in ATRs (keeps price from touching the rails).")
+
+// NEW: label size (CURRENT ATR fib)
+sta_labelSize  = input.string("tiny", "Label Size (Current ATR Fib)", options=["tiny","small","normal","large","huge"], group=groupF_STA, display=display.none)
+
+// Prior (right)
+groupF_STA_P    = "Previous ATR Fib"
+enableFib_STA_P = input.bool(true,  "Enable Prev ATR Fib", group=groupF_STA_P, display=display.none, tooltip="Draw the previous ATR fib captured at the last flip.")
+sta_priorOffset = input.int(17,     "Prev Fib Offset",  minval=-500, maxval=500, group=groupF_STA_P, display=display.none, tooltip="Bars to the right/left to anchor the PREVIOUS ATR fib rays.")
+sta_priorLen    = input.int(6,      "Prev Fib Length",  minval=1, maxval=500, group=groupF_STA_P, display=display.none,  tooltip="Length of the PREVIOUS ATR fib rays (in bars).")
+staP_showText   = input.bool(true,  "Show Level Text (Prev)", group=groupF_STA_P, display=display.none, tooltip="Show ratio text on PREVIOUS ATR fib labels.")
+staP_showPrice  = input.bool(true,  "Show Price (Prev)",      group=groupF_STA_P, display=display.none, tooltip="Append price to PREVIOUS ATR fib labels.")
+staP_pct        = input.bool(false, "Display % not ratio (Prev)", group=groupF_STA_P, display=display.none, tooltip="Format the ratio text on PREVIOUS ATR as a percent.")
+
+// NEW: label size (PREVIOUS ATR fib)
+staP_labelSize  = input.string("tiny", "Label Size (Previous ATR Fib)", options=["tiny","small","normal","large","huge"], group=groupF_STA_P, display=display.none)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOOKBACK (inputs) — timeframe + lookback + look-ahead bars 
+// ─────────────────────────────────────────────────────────────────────────────
+groupF_LB        = "Lookback Auto Fib"
+enableFib_LB     = input.bool(true, "Enable Lookback Fib", group=groupF_LB, display=display.none, tooltip="Draw the Lookback-based auto Fibonacci using HH/LL extremes.")
+
+// Adjustable timeframe for Lookback engine (empty = chart timeframe)
+lb_tf            = input.timeframe("", "Lookback Timeframe", group=groupF_LB, display=display.none, tooltip="Timeframe used to compute HH/LL extremes for the Lookback Auto Fib. Leave blank to use the chart timeframe.")
+
+// Lookback bars
+lb_lookback      = input.int(1500, "Lookback Bars", minval=10, group=groupF_LB, display=display.none, tooltip="Number of bars (on the selected Lookback Timeframe) to search for extremes.")
+
+// Look-ahead bars (0 = off). Any value > 0 enables barmerge.lookahead_on and can repaint.
+lb_lookaheadBars = input.int(0, "Look-ahead Bars (repainting)", minval=0, group=groupF_LB, display=display.none, tooltip="0 = off (no look-ahead). Any value > 0 turns look-ahead ON internally (can REPAINT). Use only if you WANT forward-looking levels during bar formation.")
+
+// Direction overrides (kept for parity with your UI)
+lb_forceUp       = input.bool(false, "Force Uptrend",   group=groupF_LB, display=display.none, tooltip="Force Lookback mode to UP (ignores auto direction).")
+lb_forceDown     = input.bool(false, "Force Downtrend", group=groupF_LB, display=display.none, tooltip="Force Lookback mode to DOWN (ignores auto direction).")
+
+// Visual / placement
+lb_curOffset     = input.int(35, "Lookback Fib Offset",  minval=-500, maxval=500, group=groupF_LB, display=display.none, tooltip="Bars to the right/left to anchor the CURRENT Lookback fib rays.")
+lb_rayLen        = input.int(6,  "Lookback Fib Length",  minval=1, maxval=500, group=groupF_LB, display=display.none, tooltip="Length of the CURRENT Lookback fib rays (in bars).")
+lb_showText      = input.bool(true,  "Show Level Text", group=groupF_LB, display=display.none, tooltip="Show ratio text on CURRENT Lookback fib labels.")
+lb_showPrice     = input.bool(true,  "Show Price",      group=groupF_LB, display=display.none, tooltip="Append price to CURRENT Lookback fib labels.")
+lb_pct           = input.bool(false, "Display % not ratio", group=groupF_LB, display=display.none, tooltip="Format the ratio text as a percent.")
+
+// Label size
+lb_labelSize     = input.string("tiny", "Label Size (Lookback Fib)", options=["tiny","small","normal","large","huge"], group=groupF_LB, display=display.none)
+
+// Manual anchor override (wording updated)
+groupLBOverrides = "Lookback Anchor Overrides"
+highO            = input.float(0, "Manual Anchor High (LB)", group=groupLBOverrides, display=display.none, tooltip="Optional manual high anchor for the Lookback set.")
+lowO             = input.float(0, "Manual Anchor Low (LB)",  group=groupLBOverrides, display=display.none, tooltip="Optional manual low anchor for the Lookback set.")
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fibonacci Levels + styles (extended) — used by BOTH ATR & SMA engines
+// ─────────────────────────────────────────────────────────────────────────────
+groupFibLvls      = "Fibonacci Levels"
+// 0..1 set (existing)
+enableFibLevel0   = input.bool(true,  "Enable Level 0.000",   group=groupFibLvls, display=display.none, tooltip="Toggle the 0.000 level.")
+fibLevel0         = input.float(0.000,"Level 0.000",          group=groupFibLvls, display=display.none, tooltip="Ratio for the 0 level.")
+fibThickness0     = input.int(2,      "Thickness 0.000",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 0.000.")
+fibStyle0         = input.string("Solid","Style 0.000", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 0.000.")
+fibColor0         = input.color(color.gray, "Color 0.000",    group=groupFibLvls, display=display.none, tooltip="Line/label color for 0.000.")
+
+enableFibLevel1   = input.bool(false, "Enable Level 0.146",   group=groupFibLvls, display=display.none, tooltip="Toggle the 0.146 level.")
+fibLevel1         = input.float(0.146,"Level 0.146",          group=groupFibLvls, display=display.none, tooltip="Ratio for 0.146.")
+fibThickness1     = input.int(2,      "Thickness 0.146",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 0.146.")
+fibStyle1         = input.string("Solid","Style 0.146", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 0.146.")
+fibColor1         = input.color(color.red, "Color 0.146",     group=groupFibLvls, display=display.none, tooltip="Line/label color for 0.146.")
+
+enableFibLevel2   = input.bool(true,  "Enable Level 0.236",   group=groupFibLvls, display=display.none, tooltip="Toggle the 0.236 level.")
+fibLevel2         = input.float(0.236,"Level 0.236",          group=groupFibLvls, display=display.none, tooltip="Ratio for 0.236.")
+fibThickness2     = input.int(2,      "Thickness 0.236",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 0.236.")
+fibStyle2         = input.string("Solid","Style 0.236", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 0.236.")
+fibColor2         = input.color(color.green, "Color 0.236",   group=groupFibLvls, display=display.none, tooltip="Line/label color for 0.236.")
+
+enableFibLevel3   = input.bool(true,  "Enable Level 0.382",   group=groupFibLvls, display=display.none, tooltip="Toggle the 0.382 level.")
+fibLevel3         = input.float(0.382,"Level 0.382",          group=groupFibLvls, display=display.none, tooltip="Ratio for 0.382.")
+fibThickness3     = input.int(2,      "Thickness 0.382",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 0.382.")
+fibStyle3         = input.string("Solid","Style 0.382", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 0.382.")
+fibColor3         = input.color(color.orange, "Color 0.382",  group=groupFibLvls, display=display.none, tooltip="Line/label color for 0.382.")
+
+enableFibLevel4   = input.bool(true,  "Enable Level 0.500",   group=groupFibLvls, display=display.none, tooltip="Toggle the 0.500 level.")
+fibLevel4         = input.float(0.500,"Level 0.500",          group=groupFibLvls, display=display.none, tooltip="Ratio for 0.500.")
+fibThickness4     = input.int(2,      "Thickness 0.500",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 0.500.")
+fibStyle4         = input.string("Solid","Style 0.500", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 0.500.")
+fibColor4         = input.color(color.red, "Color 0.500",     group=groupFibLvls, display=display.none, tooltip="Line/label color for 0.500.")
+
+enableFibLevel5   = input.bool(true,  "Enable Level 0.618",   group=groupFibLvls, display=display.none, tooltip="Toggle the 0.618 level.")
+fibLevel5         = input.float(0.618,"Level 0.618",          group=groupFibLvls, display=display.none, tooltip="Ratio for 0.618.")
+fibThickness5     = input.int(2,      "Thickness 0.618",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 0.618.")
+fibStyle5         = input.string("Solid","Style 0.618", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 0.618.")
+fibColor5         = input.color(color.yellow, "Color 0.618",  group=groupFibLvls, display=display.none, tooltip="Line/label color for 0.618.")
+
+enableFibLevel6   = input.bool(true,  "Enable Level 0.650",   group=groupFibLvls, display=display.none, tooltip="Toggle the 0.650 level.")
+fibLevel6         = input.float(0.650,"Level 0.650",          group=groupFibLvls, display=display.none, tooltip="Ratio for 0.650.")
+fibThickness6     = input.int(2,      "Thickness 0.650",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 0.650.")
+fibStyle6         = input.string("Solid","Style 0.650", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 0.650.")
+fibColor6         = input.color(color.yellow, "Color 0.650",  group=groupFibLvls, display=display.none, tooltip="Line/label color for 0.650.")
+
+enableFibLevel7   = input.bool(false, "Enable Level 0.707",   group=groupFibLvls, display=display.none, tooltip="Toggle the 0.707 level.")
+fibLevel7         = input.float(0.707,"Level 0.707",          group=groupFibLvls, display=display.none, tooltip="Ratio for 0.707.")
+fibThickness7     = input.int(2,      "Thickness 0.707",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 0.707.")
+fibStyle7         = input.string("Solid","Style 0.707", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 0.707.")
+fibColor7         = input.color(color.fuchsia,"Color 0.707",  group=groupFibLvls, display=display.none, tooltip="Line/label color for 0.707.")
+
+enableFibLevel8   = input.bool(true,  "Enable Level 0.786",   group=groupFibLvls, display=display.none, tooltip="Toggle the 0.786 level.")
+fibLevel8         = input.float(0.786,"Level 0.786",          group=groupFibLvls, display=display.none, tooltip="Ratio for 0.786.")
+fibThickness8     = input.int(2,      "Thickness 0.786",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 0.786.")
+fibStyle8         = input.string("Solid","Style 0.786", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 0.786.")
+fibColor8         = input.color(color.white,"Color 0.786",    group=groupFibLvls, display=display.none, tooltip="Line/label color for 0.786.")
+
+enableFibLevel9   = input.bool(true,  "Enable Level 0.886",   group=groupFibLvls, display=display.none, tooltip="Toggle the 0.886 level.")
+fibLevel9         = input.float(0.886,"Level 0.886",          group=groupFibLvls, display=display.none, tooltip="Ratio for 0.886.")
+fibThickness9     = input.int(2,      "Thickness 0.886",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 0.886.")
+fibStyle9         = input.string("Solid","Style 0.886", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 0.886.")
+fibColor9         = input.color(color.purple,"Color 0.886",   group=groupFibLvls, display=display.none, tooltip="Line/label color for 0.886.")
+
+enableFibLevel10  = input.bool(true,  "Enable Level 1.000",   group=groupFibLvls, display=display.none, tooltip="Toggle the 1.000 level.")
+fibLevel10        = input.float(1.000,"Level 1.000",          group=groupFibLvls, display=display.none, tooltip="Ratio for 1.000.")
+fibThickness10    = input.int(2,      "Thickness 1.000",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 1.000.")
+fibStyle10        = input.string("Solid","Style 1.000", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 1.000.")
+fibColor10        = input.color(color.gray,"Color 1.000",     group=groupFibLvls, display=display.none, tooltip="Line/label color for 1.000.")
+
+// NEW >1 extensions (after 1.0): 1.13, 1.272, 1.618, 2.000
+enableFibLevel11  = input.bool(true,  "Enable Level 1.130",   group=groupFibLvls, display=display.none, tooltip="Toggle the 1.130 extension.")
+fibLevel11        = input.float(1.130,"Level 1.130",          group=groupFibLvls, display=display.none, tooltip="Ratio for 1.130.")
+fibThickness11    = input.int(2,      "Thickness 1.130",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 1.130.")
+fibStyle11        = input.string("Solid","Style 1.130", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 1.130.")
+fibColor11        = input.color(color.new(color.gray, 0), "Color 1.130", group=groupFibLvls, display=display.none, tooltip="Line/label color for 1.130.")
+
+enableFibLevel12  = input.bool(true,  "Enable Level 1.272",   group=groupFibLvls, display=display.none, tooltip="Toggle the 1.272 extension.")
+fibLevel12        = input.float(1.272,"Level 1.272",          group=groupFibLvls, display=display.none, tooltip="Ratio for 1.272.")
+fibThickness12    = input.int(2,      "Thickness 1.272",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 1.272.")
+fibStyle12        = input.string("Solid","Style 1.272", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 1.272.")
+fibColor12        = input.color(color.new(color.gray, 0), "Color 1.272", group=groupFibLvls, display=display.none, tooltip="Line/label color for 1.272.")
+
+enableFibLevel13  = input.bool(true,  "Enable Level 1.618",   group=groupFibLvls, display=display.none, tooltip="Toggle the 1.618 extension.")
+fibLevel13        = input.float(1.618,"Level 1.618",          group=groupFibLvls, display=display.none, tooltip="Ratio for 1.618.")
+fibThickness13    = input.int(2,      "Thickness 1.618",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 1.618.")
+fibStyle13        = input.string("Solid","Style 1.618", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 1.618.")
+fibColor13        = input.color(color.new(color.yellow, 0), "Color 1.618", group=groupFibLvls, display=display.none, tooltip="Line/label color for 1.618.")
+
+enableFibLevel14  = input.bool(true,  "Enable Level 2.000",   group=groupFibLvls, display=display.none, tooltip="Toggle the 2.000 extension.")
+fibLevel14        = input.float(2.000,"Level 2.000",          group=groupFibLvls, display=display.none, tooltip="Ratio for 2.000.")
+fibThickness14    = input.int(2,      "Thickness 2.000",      minval=1, maxval=5, group=groupFibLvls, display=display.none, tooltip="Line thickness for 2.000.")
+fibStyle14        = input.string("Solid","Style 2.000", options=["Solid","Dashed","Dotted"], group=groupFibLvls, display=display.none, tooltip="Line style for 2.000.")
+fibColor14        = input.color(color.new(color.gray, 0), "Color 2.000", group=groupFibLvls, display=display.none, tooltip="Line/label color for 2.000.")
+
+// Arrays (shared across engines)
+var float[] ratios = array.from(
+     fibLevel0,fibLevel1,fibLevel2,fibLevel3,fibLevel4,
+     fibLevel5,fibLevel6,fibLevel7,fibLevel8,fibLevel9,
+     fibLevel10,fibLevel11,fibLevel12,fibLevel13,fibLevel14)
+
+var bool[]  ena    = array.from(
+     enableFibLevel0,enableFibLevel1,enableFibLevel2,enableFibLevel3,enableFibLevel4,
+     enableFibLevel5,enableFibLevel6,enableFibLevel7,enableFibLevel8,enableFibLevel9,
+     enableFibLevel10,enableFibLevel11,enableFibLevel12,enableFibLevel13,enableFibLevel14)
+
+var color[] cols   = array.from(
+     fibColor0,fibColor1,fibColor2,fibColor3,fibColor4,
+     fibColor5,fibColor6,fibColor7,fibColor8,fibColor9,
+     fibColor10,fibColor11,fibColor12,fibColor13,fibColor14)
+
+var int[]   wts    = array.from(
+     fibThickness0,fibThickness1,fibThickness2,fibThickness3,fibThickness4,
+     fibThickness5,fibThickness6,fibThickness7,fibThickness8,fibThickness9,
+     fibThickness10,fibThickness11,fibThickness12,fibThickness13,fibThickness14)
+
+var string[] styStr= array.from(
+     fibStyle0,fibStyle1,fibStyle2,fibStyle3,fibStyle4,
+     fibStyle5,fibStyle6,fibStyle7,fibStyle8,fibStyle9,
+     fibStyle10,fibStyle11,fibStyle12,fibStyle13,fibStyle14)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+f_lineStyle(_s) =>
+    _s == "Dashed" ? line.style_dashed : _s == "Dotted" ? line.style_dotted : line.style_solid
+
+f_calc(_lo,_hi,_r) =>
+    lo = useLog ? math.log(_lo) : _lo
+    hi = useLog ? math.log(_hi) : _hi
+    v  = lo + (hi - lo) * _r
+    useLog ? math.exp(v) : v
+
+f_calc_dir(_a, _b, _r) =>
+    a = useLog ? math.log(_a) : _a
+    b = useLog ? math.log(_b) : _b
+    x = a + (b - a) * _r
+    useLog ? math.exp(x) : x
+
+// NEW: fib-specific label size + sized label/bank helpers
+f_fibLblSize(_s) =>
+    switch _s
+        "tiny"   => size.tiny
+        "small"  => size.small
+        "normal" => size.normal
+        "large"  => size.large
+        "huge"   => size.huge
+        => size.tiny
+
+// left-aligned, attached at the ray’s right end (offset + length)
+f_lbl(on, price, txt, c, xoff, old) =>
+    if not na(old)
+        label.delete(old)
+    var label n = na
+    if on and not na(price) and barstate.islast
+        n := label.new(bar_index + xoff, price, text      = txt, style     = label.style_none, textalign = text.align_left, yloc      = yloc.price, color     = color.new(color.black, 100), textcolor = c, size      = size.tiny)
+    n
+
+// NEW: same as f_lbl but with custom size
+f_lbl_sz(on, price, txt, c, xoff, old, _sz) =>
+    if not na(old)
+        label.delete(old)
+    var label n = na
+    if on and not na(price) and barstate.islast
+        n := label.new(bar_index + xoff, price, text=txt, style=label.style_none, textalign=text.align_left, yloc=yloc.price, color=color.new(color.black, 100), textcolor=c, size=_sz)
+    n
+
+f_draw_bank(_lo, _hi, _offset, _len, _lnArr, _valArr) =>
+    for i = 0 to array.size(ratios) - 1
+        if array.get(ena, i) and not na(_lo) and not na(_hi)
+            v  = f_calc(_lo, _hi, array.get(ratios,i))
+            array.set(_valArr, i, v)
+            line.delete(array.get(_lnArr, i))
+            array.set(_lnArr, i, line.new(bar_index + _offset, v, bar_index + _offset + _len, v, color=array.get(cols, i), width=array.get(wts, i), style=f_lineStyle(array.get(styStr, i))))
+
+f_draw_bank_dir(_a, _b, _offset, _len, _lnArr, _valArr) =>
+    for i = 0 to array.size(ratios) - 1
+        if array.get(ena, i) and not na(_a) and not na(_b)
+            v  = f_calc_dir(_a, _b, array.get(ratios, i))
+            array.set(_valArr, i, v)
+            line.delete(array.get(_lnArr, i))
+            array.set(_lnArr, i, line.new(bar_index + _offset, v, bar_index + _offset + _len, v, color=array.get(cols, i), width=array.get(wts, i), style=f_lineStyle(array.get(styStr, i))))
+
+// place labels at ray end (offset + length) — now with "$" before price
+f_label_bank(_vals, _lblArr, _xoff, _prefix, _showText, _showPrice, _pct, _lenForLabels) =>
+    for i = 0 to array.size(ratios) - 1
+        label old = array.get(_lblArr, i)
+        base = _pct ? str.tostring(array.get(ratios,i)*100, "#.##")+"%" : str.tostring(array.get(ratios,i), "#.###")
+        t = _showText ? (_prefix != "" ? _prefix+" "+base : base) : ""
+        if _showPrice
+            priceTxt = "$" + str.tostring(array.get(_vals,i), format.mintick)
+            t := t == "" ? priceTxt : (t + " / " + priceTxt)
+        array.set(_lblArr, i, f_lbl(array.get(ena,i), array.get(_vals,i), t, array.get(cols,i), _xoff + _lenForLabels, old))
+
+// NEW: sized variant (uses f_lbl_sz)
+f_label_bank_sz(_vals, _lblArr, _xoff, _prefix, _showText, _showPrice, _pct, _lenForLabels, _sz) =>
+    for i = 0 to array.size(ratios) - 1
+        label old = array.get(_lblArr, i)
+        base = _pct ? str.tostring(array.get(ratios,i)*100, "#.##")+"%" : str.tostring(array.get(ratios,i), "#.###")
+        t = _showText ? (_prefix != "" ? _prefix+" "+base : base) : ""
+        if _showPrice
+            priceTxt = "$" + str.tostring(array.get(_vals,i), format.mintick)
+            t := t == "" ? priceTxt : (t + " / " + priceTxt)
+        array.set(_lblArr, i, f_lbl_sz(array.get(ena,i), array.get(_vals,i), t, array.get(cols,i), _xoff + _lenForLabels, old, _sz))
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ATR engine  (Prev ATR Fib independent of enableFib_STA)
+// ─────────────────────────────────────────────────────────────────────────────
+var int   sta_det        = 0
+var int   sta_prevDet    = 0
+var float sta_anchorH    = na
+var float sta_anchorL    = na
+var float sta_priorStart = na
+var float sta_priorEnd   = na
+var float sta_trStop     = na
+var float sta_trDir      = 0.0
+var color sta_visStopColor = color.yellow
+
+var line[]  sta_curLns   = array.new_line(15)
+var float[] sta_curVals  = array.new_float(15)
+var label[] sta_curLbls  = array.new_label(15)
+var line[]  sta_prevLns  = array.new_line(15)
+var float[] sta_prevVals = array.new_float(15)
+var label[] sta_prevLbls = array.new_label(15)
+
+// NOTE: Compute ATR engine state whenever enableAutoFib is true.
+// Current ATR Fib drawing is gated by enableFib_STA.
+// Previous ATR Fib drawing is gated ONLY by enableFib_STA_P.
+if enableAutoFib
+    atr_now = ta.atr(sta_atrLen)
+    [st_val_builtin, st_dir_builtin] = ta.supertrend(sta_atrMult, sta_atrLen)
+    st_val_series = barstate.isfirst ? na : st_val_builtin
+    newDir = (st_dir_builtin < 0) ? 1 : -1
+
+    // Gap (no-touch) via ATR only
+    gap = atr_now * sta_proxATR
+
+    hiRaw  = high + gap
+    loRaw  = low  - gap
+    hiPush = ta.rma(high + gap, 3)
+    loPush = ta.rma(low  - gap, 3)
+
+    var float railH = na
+    var float railL = na
+    if na(railH) or na(railL)
+        railH := hiRaw
+        railL := loRaw
+        sta_trStop := st_val_series
+        sta_trDir  := (st_dir_builtin < 0 ? 1.0 : -1.0)
+        sta_det        := 0
+        sta_prevDet    := 0
+        sta_priorStart := na
+        sta_priorEnd   := na
+
+    prevPubH = nz(sta_anchorH[1], railH)
+    prevPubL = nz(sta_anchorL[1], railL)
+
+    if newDir != sta_det
+        if sta_det != 0
+            sta_prevDet    := sta_det
+            sta_priorStart := (sta_det == 1) ? prevPubH : prevPubL
+            sta_priorEnd   := (sta_det == 1) ? prevPubL : prevPubH
+        sta_det := newDir
+
+        if sta_det == 1
+            railL := prevPubL
+            railH := hiRaw
+        else
+            railH := prevPubH
+            railL := loRaw
+    else
+        if sta_det == 1
+            railH := math.max(prevPubH, hiPush)
+            railL := prevPubL
+        else if sta_det == -1
+            railL := math.min(prevPubL, loPush)
+            railH := prevPubH
+        else
+            railH := hiRaw
+            railL := loRaw
+
+    if railL > railH
+        midFix = (railL + railH) * 0.5
+        railL := midFix
+        railH := midFix
+
+    // hard no-touch clamp (keep outside candle)
+    railH := math.max(railH, high + gap)
+    railL := math.min(railL, low  - gap)
+
+    // Supertrend visual (continuous), clamped for display only
+    st_clamped       = math.min(math.max(st_val_series, railL), railH)
+    sta_trStop       := st_clamped
+    sta_visStopColor := (st_dir_builtin < 0) ? color.lime : color.red
+
+    // Publish rails
+    sta_anchorH := railH
+    sta_anchorL := railL
+
+    // CURRENT ATR fib — draws only if enableFib_STA is on
+    if enableFib_STA and sta_det != 0
+        cur0 = (sta_det == 1) ? sta_anchorH : sta_anchorL
+        cur1 = (sta_det == 1) ? sta_anchorL : sta_anchorH
+        f_draw_bank_dir(cur0, cur1, sta_curOffset, sta_rayLen, sta_curLns, sta_curVals)
+        f_label_bank_sz(sta_curVals, sta_curLbls, sta_curOffset, "", sta_showText, sta_showPrice, sta_pct, sta_rayLen, f_fibLblSize(sta_labelSize))
+
+    // PREVIOUS ATR fib — independent of enableFib_STA
+    if enableFib_STA_P and sta_prevDet != 0 and not na(sta_priorStart) and not na(sta_priorEnd)
+        f_draw_bank_dir(sta_priorStart, sta_priorEnd, sta_priorOffset, sta_priorLen, sta_prevLns, sta_prevVals)
+        f_label_bank_sz(sta_prevVals, sta_prevLbls, sta_priorOffset, "Prev", staP_showText, staP_showPrice, staP_pct, sta_priorLen, f_fibLblSize(staP_labelSize))
+else
+    na
+
+// ── GLOBAL PLOTS (unchanged; still tied to current ATR Fib visuals)
+plot((sta_plotHL  and enableAutoFib and enableFib_STA) ? sta_anchorH : na, title="ATR Anchor High", color=color.new(color.white, 0), style=plot.style_line,   linewidth=2)
+plot((sta_plotHL  and enableAutoFib and enableFib_STA) ? sta_anchorL : na, title="ATR Anchor Low",  color=color.new(color.white, 0), style=plot.style_line,   linewidth=2)
+plot((sta_plotATR and enableAutoFib and enableFib_STA) ? sta_trStop  : na, title="Supertrend (continuous)", color=sta_visStopColor, style=plot.style_linebr, linewidth=2)
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOOKBACK engine (ATR-style flow) — uses HH/LL on lb_tf for anchors
+// Trend = which extreme is MOST RECENT inside the lookback window
+// Draw direction & flip capture mirrors your ATR engine for visual consistency
+// ─────────────────────────────────────────────────────────────────────────────
+var int   lb_det         = 0          // 1 = up (recent High), -1 = down (recent Low)
+var int   lb_prevDet     = 0
+var float lb_anchorH     = na         // published “railH” equivalent = lookback HH
+var float lb_anchorL     = na         // published “railL” equivalent = lookback LL
+var float lb_priorStart  = na         // previous segment start (for optional prev draw later)
+var float lb_priorEnd    = na
+
+var line[]  lb_curLns    = array.new_line(15)
+var float[] lb_curVals   = array.new_float(15)
+var label[] lb_curLbls   = array.new_label(15)
+
+// NOTE: logic unchanged from your latest “SMA-less lookback” version; only names updated.
+if enableAutoFib and enableFib_LB
+    // Selected TF + lookahead mode
+    _tf     = (lb_tf == "" ? timeframe.period : lb_tf)
+    _laMode = lb_lookaheadBars > 0 ? barmerge.lookahead_on : barmerge.lookahead_off
+
+    // Compute HH/LL AND their “bars back” on the selected timeframe (no interpolation)
+    _hiVal = request.security(syminfo.tickerid, _tf, ta.highest(high,     lb_lookback),     lookahead=_laMode, gaps=barmerge.gaps_off)
+    _loVal = request.security(syminfo.tickerid, _tf, ta.lowest( low,      lb_lookback),     lookahead=_laMode, gaps=barmerge.gaps_off)
+    _hiOff = request.security(syminfo.tickerid, _tf, ta.highestbars(high, lb_lookback),     lookahead=_laMode, gaps=barmerge.gaps_off)
+    _loOff = request.security(syminfo.tickerid, _tf, ta.lowestbars( low,  lb_lookback),     lookahead=_laMode, gaps=barmerge.gaps_off)
+
+    // MOST RECENT extreme decides direction (ties keep prior)
+    recentHigh = _hiOff < _loOff
+    recentLow  = _loOff < _hiOff
+    newDet = lb_forceUp ? 1 : lb_forceDown ? -1 : (recentHigh ? 1 : (recentLow ? -1 : lb_det))
+
+    // Manual override wins if both provided (kept exactly like before)
+    if (highO > 0 and lowO > 0)
+        newDet := highO > lowO ? 1 : -1
+
+    // Flip handling (mirror ATR engine)
+    if newDet != lb_det and lb_det != 0
+        lb_prevDet    := lb_det
+        // Mirror ATR’s “priorStart/priorEnd” convention:
+        //  uptrend prior = H → L ; downtrend prior = L → H
+        lb_priorStart := (lb_det == 1) ? nz(lb_anchorH, _hiVal) : nz(lb_anchorL, _loVal)
+        lb_priorEnd   := (lb_det == 1) ? nz(lb_anchorL, _loVal) : nz(lb_anchorH, _hiVal)
+
+    // Commit direction
+    lb_det := newDet
+
+    // Publish anchors = raw lookback HH/LL (no ATR “push”)
+    // If manual anchors are provided, force them (exactly like before)
+    lb_anchorH := (highO > 0 and lowO > 0) ? highO : _hiVal
+    lb_anchorL := (highO > 0 and lowO > 0) ? lowO  : _loVal
+
+    // CURRENT Lookback fib — directional draw:
+    //  Uptrend  => draw LOW → HIGH
+    //  Downtrend => draw HIGH → LOW
+    if lb_det != 0
+        cur0 = (lb_det == 1) ? lb_anchorL : lb_anchorH
+        cur1 = (lb_det == 1) ? lb_anchorH : lb_anchorL
+        f_draw_bank_dir(cur0, cur1, lb_curOffset, lb_rayLen, lb_curLns, lb_curVals)
+        // Label prefix and size updated to “LB”
+        f_label_bank_sz(lb_curVals, lb_curLbls, lb_curOffset, "LB", lb_showText, lb_showPrice, lb_pct, lb_rayLen, f_fibLblSize(lb_labelSize))
+else
+    na
