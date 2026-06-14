@@ -622,98 +622,115 @@ showST = enableATCFilter and showATC and (atcMode == "Short-Term" or atcMode == 
 showLT = enableATCFilter and showATC and (atcMode == "Long-Term" or atcMode == "Both") and not na(atcDetectedPeriodLT) and not na(atcUpperLT) and not na(atcLowerLT)
 historyMode = atcHistoryDisplayCap != 1
 
+// Retained ATC history is intentionally sparse: it records a completed channel
+// only when the selected ATC slope flips between downtrend and uptrend. This
+// avoids the unreadable fan of every-bar regression snapshots.
 if historyMode
     int linesThisBar = 0
-    if showST and bar_index > 0
-        startYSTHist = math.exp(detIST + atcSlopeST * (atcDetectedPeriodST - 1))
-        startBarSTHist = bar_index - int(atcDetectedPeriodST) + 1
-        ulSTHist = startYSTHist * math.exp(atcDevMultST * detDST)
-        llSTHist = startYSTHist / math.exp(atcDevMultST * detDST)
-        stColUpper = color.new(atcUpperColorST, atcTransparency)
-        stColLower = color.new(atcLowerColorST, atcTransparency)
-        f_pushAtcHistoryLine(startBarSTHist, ulSTHist, bar_index, atcUpperST, stColUpper, f_lineStyle(atcLineStyle), atcLineWidth)
-        f_pushAtcHistoryLine(startBarSTHist, llSTHist, bar_index, atcLowerST, stColLower, f_lineStyle(atcLineStyle), atcLineWidth)
+    stTrendNow = atcSlopeST < 0
+    stTrendPrev = atcSlopeST[1] < 0
+    stTrendFlip = showST and not na(atcSlopeST[1]) and stTrendNow != stTrendPrev
+    if stTrendFlip
+        prevPeriodST = int(atcDetectedPeriodST[1])
+        startYSTHist = math.exp(detIST[1] + atcSlopeST[1] * (atcDetectedPeriodST[1] - 1))
+        endYSTHist = math.exp(detIST[1])
+        startBarSTHist = bar_index - prevPeriodST
+        endBarSTHist = bar_index - 1
+        ulSTHist = startYSTHist * math.exp(atcDevMultST * detDST[1])
+        urSTHist = endYSTHist * math.exp(atcDevMultST * detDST[1])
+        llSTHist = startYSTHist / math.exp(atcDevMultST * detDST[1])
+        lrSTHist = endYSTHist / math.exp(atcDevMultST * detDST[1])
+        f_pushAtcHistoryLine(startBarSTHist, ulSTHist, endBarSTHist, urSTHist, color.new(atcUpperColorST, atcTransparency), f_lineStyle(atcLineStyle), atcLineWidth)
+        f_pushAtcHistoryLine(startBarSTHist, llSTHist, endBarSTHist, lrSTHist, color.new(atcLowerColorST, atcTransparency), f_lineStyle(atcLineStyle), atcLineWidth)
         linesThisBar += 2
         if showATCMidline
-            f_pushAtcHistoryLine(startBarSTHist, startYSTHist, bar_index, atcMidST, color.new(atcMidColor, atcTransparency), line.style_dashed, atcLineWidth)
+            f_pushAtcHistoryLine(startBarSTHist, startYSTHist, endBarSTHist, endYSTHist, color.new(atcMidColor, atcTransparency), line.style_dashed, atcLineWidth)
             linesThisBar += 1
-    if showLT and bar_index > 0
-        startYLTHist = math.exp(detILT + atcSlopeLT * (atcDetectedPeriodLT - 1))
-        startBarLTHist = bar_index - int(atcDetectedPeriodLT) + 1
-        ulLTHist = startYLTHist * math.exp(atcDevMultLT * detDLT)
-        llLTHist = startYLTHist / math.exp(atcDevMultLT * detDLT)
-        ltColUpper = color.new(atcUpperColorLT, atcTransparency)
-        ltColLower = color.new(atcLowerColorLT, atcTransparency)
-        f_pushAtcHistoryLine(startBarLTHist, ulLTHist, bar_index, atcUpperLT, ltColUpper, f_lineStyle(atcLineStyle), atcLineWidth)
-        f_pushAtcHistoryLine(startBarLTHist, llLTHist, bar_index, atcLowerLT, ltColLower, f_lineStyle(atcLineStyle), atcLineWidth)
+    ltTrendNow = atcSlopeLT < 0
+    ltTrendPrev = atcSlopeLT[1] < 0
+    ltTrendFlip = showLT and not na(atcSlopeLT[1]) and ltTrendNow != ltTrendPrev
+    if ltTrendFlip
+        prevPeriodLT = int(atcDetectedPeriodLT[1])
+        startYLTHist = math.exp(detILT[1] + atcSlopeLT[1] * (atcDetectedPeriodLT[1] - 1))
+        endYLTHist = math.exp(detILT[1])
+        startBarLTHist = bar_index - prevPeriodLT
+        endBarLTHist = bar_index - 1
+        ulLTHist = startYLTHist * math.exp(atcDevMultLT * detDLT[1])
+        urLTHist = endYLTHist * math.exp(atcDevMultLT * detDLT[1])
+        llLTHist = startYLTHist / math.exp(atcDevMultLT * detDLT[1])
+        lrLTHist = endYLTHist / math.exp(atcDevMultLT * detDLT[1])
+        f_pushAtcHistoryLine(startBarLTHist, ulLTHist, endBarLTHist, urLTHist, color.new(atcUpperColorLT, atcTransparency), f_lineStyle(atcLineStyle), atcLineWidth)
+        f_pushAtcHistoryLine(startBarLTHist, llLTHist, endBarLTHist, lrLTHist, color.new(atcLowerColorLT, atcTransparency), f_lineStyle(atcLineStyle), atcLineWidth)
         linesThisBar += 2
         if showATCMidline
-            f_pushAtcHistoryLine(startBarLTHist, startYLTHist, bar_index, atcMidLT, color.new(atcMidColor, atcTransparency), line.style_dashed, atcLineWidth)
+            f_pushAtcHistoryLine(startBarLTHist, startYLTHist, endBarLTHist, endYLTHist, color.new(atcMidColor, atcTransparency), line.style_dashed, atcLineWidth)
             linesThisBar += 1
     if linesThisBar > 0
         f_trimAtcHistory(linesThisBar)
-else
-    if barstate.islast
-        if showST
-            startYST = math.exp(detIST + atcSlopeST * (atcDetectedPeriodST - 1))
-            startBarST = bar_index - int(atcDetectedPeriodST) + 1
-            ulST = startYST * math.exp(atcDevMultST * detDST)
-            llST = startYST / math.exp(atcDevMultST * detDST)
-            if na(upperLineST)
-                upperLineST := line.new(startBarST, ulST, bar_index, atcUpperST, color=color.new(atcUpperColorST, atcTransparency), width=atcLineWidth, style=f_lineStyle(atcLineStyle), extend=extend.right)
-                lowerLineST := line.new(startBarST, llST, bar_index, atcLowerST, color=color.new(atcLowerColorST, atcTransparency), width=atcLineWidth, style=f_lineStyle(atcLineStyle), extend=extend.right)
-                midLineST := line.new(startBarST, startYST, bar_index, atcMidST, color=color.new(atcMidColor, atcTransparency), width=atcLineWidth, style=line.style_dashed, extend=extend.right)
-            line.set_xy1(upperLineST, startBarST, ulST)
-            line.set_xy2(upperLineST, bar_index, atcUpperST)
-            line.set_color(upperLineST, color.new(atcUpperColorST, atcTransparency))
-            line.set_xy1(lowerLineST, startBarST, llST)
-            line.set_xy2(lowerLineST, bar_index, atcLowerST)
-            line.set_color(lowerLineST, color.new(atcLowerColorST, atcTransparency))
-            line.set_xy1(midLineST, startBarST, startYST)
-            line.set_xy2(midLineST, bar_index, atcMidST)
-            line.set_color(midLineST, showATCMidline ? color.new(atcMidColor, atcTransparency) : color.new(atcMidColor, 100))
-            if showATCFill
-                if not na(fillST)
-                    linefill.delete(fillST)
-                fillST := linefill.new(upperLineST, lowerLineST, color=atcSlopeST < 0 ? atcFillBullColor : atcFillBearColor)
-        else
-            if not na(upperLineST)
-                line.delete(upperLineST)
-                line.delete(lowerLineST)
-                line.delete(midLineST)
-                upperLineST := na
-                lowerLineST := na
-                midLineST := na
-        if showLT
-            startYLT = math.exp(detILT + atcSlopeLT * (atcDetectedPeriodLT - 1))
-            startBarLT = bar_index - int(atcDetectedPeriodLT) + 1
-            ulLT = startYLT * math.exp(atcDevMultLT * detDLT)
-            llLT = startYLT / math.exp(atcDevMultLT * detDLT)
-            if na(upperLineLT)
-                upperLineLT := line.new(startBarLT, ulLT, bar_index, atcUpperLT, color=color.new(atcUpperColorLT, atcTransparency), width=atcLineWidth, style=f_lineStyle(atcLineStyle), extend=extend.right)
-                lowerLineLT := line.new(startBarLT, llLT, bar_index, atcLowerLT, color=color.new(atcLowerColorLT, atcTransparency), width=atcLineWidth, style=f_lineStyle(atcLineStyle), extend=extend.right)
-                midLineLT := line.new(startBarLT, startYLT, bar_index, atcMidLT, color=color.new(atcMidColor, atcTransparency), width=atcLineWidth, style=line.style_dashed, extend=extend.right)
-            line.set_xy1(upperLineLT, startBarLT, ulLT)
-            line.set_xy2(upperLineLT, bar_index, atcUpperLT)
-            line.set_color(upperLineLT, color.new(atcUpperColorLT, atcTransparency))
-            line.set_xy1(lowerLineLT, startBarLT, llLT)
-            line.set_xy2(lowerLineLT, bar_index, atcLowerLT)
-            line.set_color(lowerLineLT, color.new(atcLowerColorLT, atcTransparency))
-            line.set_xy1(midLineLT, startBarLT, startYLT)
-            line.set_xy2(midLineLT, bar_index, atcMidLT)
-            line.set_color(midLineLT, showATCMidline ? color.new(atcMidColor, atcTransparency) : color.new(atcMidColor, 100))
-            if showATCFill
-                if not na(fillLT)
-                    linefill.delete(fillLT)
-                fillLT := linefill.new(upperLineLT, lowerLineLT, color=atcSlopeLT < 0 ? atcFillBullColor : atcFillBearColor)
-        else
-            if not na(upperLineLT)
-                line.delete(upperLineLT)
-                line.delete(lowerLineLT)
-                line.delete(midLineLT)
-                upperLineLT := na
-                lowerLineLT := na
-                midLineLT := na
+
+// Current live channel remains a single updated object set in both live-only and
+// history modes. Historical retained channels are separate snapshots above.
+if barstate.islast
+    if showST
+        startYST = math.exp(detIST + atcSlopeST * (atcDetectedPeriodST - 1))
+        startBarST = bar_index - int(atcDetectedPeriodST) + 1
+        ulST = startYST * math.exp(atcDevMultST * detDST)
+        llST = startYST / math.exp(atcDevMultST * detDST)
+        if na(upperLineST)
+            upperLineST := line.new(startBarST, ulST, bar_index, atcUpperST, color=color.new(atcUpperColorST, atcTransparency), width=atcLineWidth, style=f_lineStyle(atcLineStyle), extend=extend.right)
+            lowerLineST := line.new(startBarST, llST, bar_index, atcLowerST, color=color.new(atcLowerColorST, atcTransparency), width=atcLineWidth, style=f_lineStyle(atcLineStyle), extend=extend.right)
+            midLineST := line.new(startBarST, startYST, bar_index, atcMidST, color=color.new(atcMidColor, atcTransparency), width=atcLineWidth, style=line.style_dashed, extend=extend.right)
+        line.set_xy1(upperLineST, startBarST, ulST)
+        line.set_xy2(upperLineST, bar_index, atcUpperST)
+        line.set_color(upperLineST, color.new(atcUpperColorST, atcTransparency))
+        line.set_xy1(lowerLineST, startBarST, llST)
+        line.set_xy2(lowerLineST, bar_index, atcLowerST)
+        line.set_color(lowerLineST, color.new(atcLowerColorST, atcTransparency))
+        line.set_xy1(midLineST, startBarST, startYST)
+        line.set_xy2(midLineST, bar_index, atcMidST)
+        line.set_color(midLineST, showATCMidline ? color.new(atcMidColor, atcTransparency) : color.new(atcMidColor, 100))
+        if showATCFill
+            if not na(fillST)
+                linefill.delete(fillST)
+            fillST := linefill.new(upperLineST, lowerLineST, color=atcSlopeST < 0 ? atcFillBullColor : atcFillBearColor)
+    else
+        if not na(upperLineST)
+            line.delete(upperLineST)
+            line.delete(lowerLineST)
+            line.delete(midLineST)
+            upperLineST := na
+            lowerLineST := na
+            midLineST := na
+    if showLT
+        startYLT = math.exp(detILT + atcSlopeLT * (atcDetectedPeriodLT - 1))
+        startBarLT = bar_index - int(atcDetectedPeriodLT) + 1
+        ulLT = startYLT * math.exp(atcDevMultLT * detDLT)
+        llLT = startYLT / math.exp(atcDevMultLT * detDLT)
+        if na(upperLineLT)
+            upperLineLT := line.new(startBarLT, ulLT, bar_index, atcUpperLT, color=color.new(atcUpperColorLT, atcTransparency), width=atcLineWidth, style=f_lineStyle(atcLineStyle), extend=extend.right)
+            lowerLineLT := line.new(startBarLT, llLT, bar_index, atcLowerLT, color=color.new(atcLowerColorLT, atcTransparency), width=atcLineWidth, style=f_lineStyle(atcLineStyle), extend=extend.right)
+            midLineLT := line.new(startBarLT, startYLT, bar_index, atcMidLT, color=color.new(atcMidColor, atcTransparency), width=atcLineWidth, style=line.style_dashed, extend=extend.right)
+        line.set_xy1(upperLineLT, startBarLT, ulLT)
+        line.set_xy2(upperLineLT, bar_index, atcUpperLT)
+        line.set_color(upperLineLT, color.new(atcUpperColorLT, atcTransparency))
+        line.set_xy1(lowerLineLT, startBarLT, llLT)
+        line.set_xy2(lowerLineLT, bar_index, atcLowerLT)
+        line.set_color(lowerLineLT, color.new(atcLowerColorLT, atcTransparency))
+        line.set_xy1(midLineLT, startBarLT, startYLT)
+        line.set_xy2(midLineLT, bar_index, atcMidLT)
+        line.set_color(midLineLT, showATCMidline ? color.new(atcMidColor, atcTransparency) : color.new(atcMidColor, 100))
+        if showATCFill
+            if not na(fillLT)
+                linefill.delete(fillLT)
+            fillLT := linefill.new(upperLineLT, lowerLineLT, color=atcSlopeLT < 0 ? atcFillBullColor : atcFillBearColor)
+    else
+        if not na(upperLineLT)
+            line.delete(upperLineLT)
+            line.delete(lowerLineLT)
+            line.delete(midLineLT)
+            upperLineLT := na
+            lowerLineLT := na
+            midLineLT := na
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Labels, stops, exits
